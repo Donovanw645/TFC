@@ -792,7 +792,6 @@ svg { flex-shrink: 0; }
   inset: 0;
   z-index: 1050;
   background: rgba(0,0,0,.5);
-  backdrop-filter: blur(2px);
   transition: opacity .3s;
 }
 .backdrop.hidden { display: none; }
@@ -855,7 +854,7 @@ svg { flex-shrink: 0; }
 
 @media (max-width: 480px) {
   .search-wrapper { max-width: none; }
-  .header-right .icon-btn:first-child { display: none; }
+  #locateBtn { display: none; }
 }
 
 @media (min-width: 769px) {
@@ -870,7 +869,7 @@ svg { flex-shrink: 0; }
     top: calc(var(--header-h) + var(--filter-h));
     left: 0;
     bottom: 0;
-    z-index: 1050;
+    z-index: 1060;
     width: 85vw;
     max-width: 320px;
   }
