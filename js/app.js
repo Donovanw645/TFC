@@ -266,6 +266,8 @@ function normalizeCamera(raw, district) {
   var name = c.cctvName || loc.locationName || loc.nearbyPlace || ('Camera ' + id);
   var lat  = parseFloat(loc.latitude  || loc.lat || 0);
   var lng  = parseFloat(loc.longitude || loc.lng || loc.lon || 0);
+  // Some districts store longitude as a positive value (degrees west); force western hemisphere
+  if (lng > 0) lng = -lng;
 
   var img       = imgUrl || (id ? imageUrl(id, district) : '');
   var streamUrl = imgBlock.streamingVideoURL || null;
@@ -310,7 +312,11 @@ async function loadAllCameras() {
     }
   }
 
-  allCameras = cameras.filter(c => c.lat !== 0 && c.lng !== 0);
+  allCameras = cameras.filter(c =>
+    isFinite(c.lat) && isFinite(c.lng) &&
+    c.lat >= 32 && c.lat <= 42.5 &&
+    c.lng >= -125 && c.lng <= -113
+  );
 
   if (!allCameras.length) {
     showLoading(false);
