@@ -5,6 +5,29 @@
 
 'use strict';
 
+// ── On-screen debug panel (append ?debug to URL) ──
+const DEBUG = location.search.includes('debug');
+if (DEBUG) {
+  const box = document.createElement('div');
+  box.id = 'debugBox';
+  box.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:40vh;overflow-y:auto;background:rgba(0,0,0,.92);color:#4ade80;font:11px/1.5 monospace;padding:8px 10px;z-index:9999;border-top:1px solid #333';
+  document.body.appendChild(box);
+  ['log','warn','error'].forEach(function(lvl) {
+    var orig = console[lvl].bind(console);
+    console[lvl] = function() {
+      orig.apply(console, arguments);
+      var line = document.createElement('div');
+      line.style.color = lvl === 'error' ? '#f87171' : lvl === 'warn' ? '#fbbf24' : '#4ade80';
+      line.textContent = '[' + lvl + '] ' + Array.from(arguments).map(function(a) {
+        return typeof a === 'object' ? JSON.stringify(a) : String(a);
+      }).join(' ');
+      box.appendChild(line);
+      box.scrollTop = box.scrollHeight;
+    };
+  });
+  console.log('Debug mode on — ' + new Date().toLocaleTimeString());
+}
+
 // ── Constants ──────────────────────────────
 const BASE_URL    = 'https://cwwp2.dot.ca.gov';
 const DISTRICTS   = [1,2,3,4,5,6,7,8,9,10,11,12];
