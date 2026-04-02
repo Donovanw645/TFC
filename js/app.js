@@ -1,0 +1,680 @@
+/* ═══════════════════════════════════════════
+   CA Traffic Cams — App Logic
+   Pulls live data from Caltrans CWWP2 API
+════════════════════════════════════════════ */
+
+'use strict';
+
+// ── Constants ──────────────────────────────
+const BASE_URL    = 'https://cwwp2.dot.ca.gov';
+const DISTRICTS   = [1,2,3,4,5,6,7,8,9,10,11,12];
+const REFRESH_SEC = 120; // auto-refresh interval in seconds
+
+const DISTRICT_NAMES = {
+  1:'Eureka', 2:'Redding', 3:'Marysville', 4:'Bay Area',
+  5:'San Luis Obispo', 6:'Fresno', 7:'Los Angeles',
+  8:'San Bernardino', 9:'Bishop', 10:'Stockton',
+  11:'San Diego', 12:'Orange County'
+};
+
+// Build district JSON URL
+function districtUrl(d) {
+  const pad = String(d).padStart(2,'0');
+  return `${BASE_URL}/data/d${d}/cctv/cctvStatusD${pad}.json`;
+}
+
+// Build image URL from camera ID and district
+function imageUrl(camId, district) {
+  return `${BASE_URL}/data/d${district}/cctv/image/${camId}/${camId}.jpg`;
+}
+
+// ── State ──────────────────────────────────
+let allCameras    = [];       // all normalized camera objects
+let filtered      = [];       // currently displayed cameras
+let selectedCam   = null;     // currently selected camera
+let userLatLng    = null;     // { lat, lng }
+let activeDistrict= 'all';
+let searchQuery   = '';
+let autoRefreshTimer = null;
+let imageRefreshTimer= null;
+let sidebarOpen   = false;    // mobile sidebar
+let markers       = new Map();// camId → L.Marker
+let markerCluster = null;
+
+// ── Map init ───────────────────────────────
+const map = L.map('map', {
+  center: [37.5, -119.5],
+  zoom: 6,
+  zoomControl: true,
+  attributionControl: true,
+});
+
+// Dark CartoDB tiles
+const darkTiles = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a> | Data: <a href="https://cwwp2.dot.ca.gov">Caltrans</a>',
+    subdomains: 'abcd',
+    maxZoom: 19,
+    r: window.devicePixelRatio > 1 ? '@2x' : ''
+  }
+);
+darkTiles.addTo(map);
+
+// Marker cluster group
+markerCluster = L.markerClusterGroup({
+  maxClusterRadius: 50,
+  showCoverageOnHover: false,
+  iconCreateFunction(cluster) {
+    const c = cluster.getChildCount();
+    const size = c < 10 ? 32 : c < 100 ? 38 : 44;
+    return L.divIcon({
+      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(59,130,246,.7);border:2px solid rgba(96,165,250,.8);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:${c<100?12:10}px;box-shadow:0 0 12px rgba(59,130,246,.4)">${c}</div>`,
+      className: '',
+      iconSize: [size, size],
+      iconAnchor: [size/2, size/2],
+    });
+  }
+});
+map.addLayer(markerCluster);
+
+// ── Camera Normalization ────────────────────
+/**
+ * Parse a raw camera record from Caltrans JSON into a normalized object.
+ * The CWWP2 JSON wraps each record under a nested `cctv` key.
+ */
+function normalizeCamera(raw, district) {
+  // Handle double-wrapped: { cctv: { cctv: { ... } } } or { cctv: { ... } }
+  const c = raw.cctv?.cctv ?? raw.cctv ?? raw;
+
+  const loc     = c.location ?? {};
+  const imgData = c.imageData?.static ?? c.imageData ?? {};
+  const streams = c.streamingVideoList?.streamingVideo ?? [];
+
+  const id   = c.cctvID   ?? c.id ?? '';
+  const name = c.cctvName ?? c.name ?? c.locationDescription ?? `Camera ${id}`;
+  const lat  = parseFloat(loc.latitude  ?? loc.lat ?? 0);
+  const lng  = parseFloat(loc.longitude ?? loc.lng ?? loc.lon ?? 0);
+
+  // Derive image URL — prefer embedded URL, fall back to constructed
+  const imgRaw = imgData.currentImageURL ?? imgData.imageURL ?? imgData.url ?? '';
+  const img    = imgRaw || (id ? imageUrl(id, district) : '');
+
+  // Stream URLs
+  const streamUrl = (streams[0]?.streamingVideoURL) ?? null;
+
+  const condition = (c.cctvCondition ?? '').toLowerCase();
+  const status    = condition.includes('active') ? 'active'
+                  : condition.includes('inactive') || condition.includes('offline') ? 'inactive'
+                  : 'unknown';
+
+  return {
+    id, name, lat, lng, district,
+    roadway: loc.roadway ?? loc.highway ?? '',
+    direction: loc.direction ?? loc.dir ?? '',
+    description: loc.locationDescription ?? loc.description ?? name,
+    county: loc.county ?? '',
+    elevation: loc.elevation ?? null,
+    imageUrl: img,
+    streamUrl,
+    status,
+    distName: DISTRICT_NAMES[district] ?? `District ${district}`,
+    dist: null, // distance from user, computed later
+  };
+}
+
+// ── Fetch all district data ─────────────────
+async function loadAllCameras() {
+  showLoading(true, 'Loading cameras…');
+  const startTime = Date.now();
+
+  const results = await Promise.allSettled(
+    DISTRICTS.map(d => fetchDistrict(d))
+  );
+
+  const cameras = [];
+  let failCount = 0;
+
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled' && r.value.length) {
+      cameras.push(...r.value);
+    } else {
+      failCount++;
+    }
+  });
+
+  allCameras = cameras.filter(c => c.lat !== 0 && c.lng !== 0);
+
+  if (allCameras.length === 0) {
+    showLoading(false);
+    showToast('Could not load camera data. Check your connection.', 'error', 5000);
+    showListPlaceholder('Unable to load cameras. Try refreshing.');
+    return;
+  }
+
+  // Sort by district then name
+  allCameras.sort((a,b) => a.district - b.district || a.name.localeCompare(b.name));
+
+  updateUserDistances();
+  applyFilter();
+  showLoading(false);
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  showToast(`Loaded ${allCameras.length.toLocaleString()} cameras in ${elapsed}s`, 'success', 3000);
+}
+
+async function fetchDistrict(d) {
+  try {
+    const url = districtUrl(d);
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json();
+
+    // Navigate nested structure: json.data.d{N}.cctv or json.cctv
+    const distKey = `d${d}`;
+    const root  = json?.data?.[distKey] ?? json?.data ?? json;
+    const rawList = root?.cctv ?? root?.cameras ?? root?.items ?? [];
+
+    if (!Array.isArray(rawList)) return [];
+
+    return rawList
+      .map(raw => {
+        try { return normalizeCamera(raw, d); }
+        catch { return null; }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+// ── Filter & Render ─────────────────────────
+function applyFilter() {
+  const q = searchQuery.toLowerCase().trim();
+
+  filtered = allCameras.filter(cam => {
+    const distMatch = activeDistrict === 'all' || cam.district === Number(activeDistrict);
+    if (!distMatch) return false;
+    if (!q) return true;
+    return (
+      cam.name.toLowerCase().includes(q) ||
+      cam.roadway.toLowerCase().includes(q) ||
+      cam.description.toLowerCase().includes(q) ||
+      cam.county.toLowerCase().includes(q)
+    );
+  });
+
+  // Sort by distance if user location known, else by district/name
+  if (userLatLng) {
+    filtered.sort((a,b) => (a.dist ?? Infinity) - (b.dist ?? Infinity));
+  }
+
+  renderMarkers();
+  renderList();
+  updateCamCount();
+}
+
+// ── Markers ────────────────────────────────
+function renderMarkers() {
+  markerCluster.clearLayers();
+  markers.clear();
+
+  filtered.forEach(cam => {
+    const colorClass = cam.status === 'active' ? 'green'
+                     : cam.status === 'inactive' ? 'red' : 'yellow';
+
+    const icon = L.divIcon({
+      html: `<div class="cam-dot ${colorClass}" data-id="${cam.id}"></div>`,
+      className: 'cam-marker-icon',
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+    });
+
+    const marker = L.marker([cam.lat, cam.lng], { icon });
+    marker.camData = cam;
+
+    marker.on('click', () => openCamera(cam, marker));
+
+    // Popup on hover (desktop)
+    const popup = L.popup({ maxWidth: 220, className: 'cam-popup', closeButton: false, offset: [0, -6] })
+      .setContent(() => buildPopupHtml(cam));
+    marker.bindPopup(popup);
+    marker.on('mouseover', () => { if (!isMobile()) marker.openPopup(); });
+    marker.on('mouseout',  () => { if (!isMobile()) marker.closePopup(); });
+
+    markers.set(cam.id, marker);
+    markerCluster.addLayer(marker);
+  });
+}
+
+function buildPopupHtml(cam) {
+  const imgSrc = cam.imageUrl ? `${cam.imageUrl}?t=${Date.now()}` : '';
+  return `
+    <div class="map-popup">
+      ${imgSrc ? `<img class="map-popup-img" src="${imgSrc}" alt="${escHtml(cam.name)}" loading="lazy" onerror="this.style.display='none'">` : ''}
+      <div class="map-popup-body">
+        <div class="map-popup-name">${escHtml(cam.name)}</div>
+        <div class="map-popup-road">${escHtml(cam.roadway)} ${cam.direction ? '· ' + cam.direction : ''} &nbsp;D${cam.district}</div>
+        <button class="map-popup-btn" onclick="openCameraById('${cam.id}')">
+          View Camera
+        </button>
+      </div>
+    </div>`;
+}
+
+// ── Sidebar List ────────────────────────────
+function renderList() {
+  const list = document.getElementById('sidebarList');
+  if (!filtered.length) {
+    list.innerHTML = `<div class="no-results">No cameras match your search</div>`;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+
+  filtered.forEach(cam => {
+    const item = document.createElement('div');
+    item.className = 'cam-list-item' + (selectedCam?.id === cam.id ? ' active' : '');
+    item.dataset.id = cam.id;
+
+    const distStr = cam.dist != null ? formatDist(cam.dist) : '';
+    const imgSrc  = cam.imageUrl ? `${cam.imageUrl}?t=${Date.now()}` : '';
+
+    item.innerHTML = `
+      <div class="cam-thumb">
+        ${imgSrc ? `<img src="${imgSrc}" alt="" loading="lazy" onerror="this.parentElement.style.background='#1e293b'">` : ''}
+      </div>
+      <div class="cam-list-info">
+        <div class="cam-list-name">${escHtml(cam.name)}</div>
+        <div class="cam-list-road">${escHtml(cam.roadway)} ${cam.direction ? '· ' + cam.direction : ''} · D${cam.district}</div>
+      </div>
+      ${distStr ? `<div class="cam-list-dist">${distStr}</div>` : ''}
+      <div class="cam-list-status ${cam.status}"></div>`;
+
+    item.addEventListener('click', () => {
+      openCamera(cam);
+      if (isMobile()) closeSidebarMobile();
+    });
+    frag.appendChild(item);
+  });
+
+  list.innerHTML = '';
+  list.appendChild(frag);
+}
+
+function updateCamCount() {
+  const el = document.getElementById('camCount');
+  el.textContent = filtered.length.toLocaleString();
+}
+
+// ── Camera Panel ────────────────────────────
+function openCamera(cam, marker) {
+  selectedCam = cam;
+
+  // Update panel content
+  document.getElementById('camPanelTitle').textContent = cam.name;
+  document.getElementById('camPanelSub').textContent   =
+    [cam.description !== cam.name ? cam.description : '', cam.county].filter(Boolean).join(' · ');
+
+  // Status badge
+  const badgeColor = cam.status === 'active' ? 'green' : cam.status === 'inactive' ? 'red' : 'yellow';
+  const badgeLabel = cam.status === 'active' ? '● Live' : cam.status === 'inactive' ? '● Offline' : '● Unknown';
+  let badges = `<span class="badge ${badgeColor}">${badgeLabel}</span>`;
+  if (cam.streamUrl) badges += `<span class="badge blue">▶ Stream</span>`;
+  document.getElementById('camPanelBadges').innerHTML = badges;
+
+  // Load image
+  loadCameraImage(cam);
+
+  // Stream section
+  const streamSection = document.getElementById('streamSection');
+  if (cam.streamUrl) {
+    document.getElementById('streamBtn').href = cam.streamUrl;
+    streamSection.classList.remove('hidden');
+  } else {
+    streamSection.classList.add('hidden');
+  }
+
+  // Detail rows
+  const details = [
+    ['Roadway',   cam.roadway || '—'],
+    ['Direction', cam.direction || '—'],
+    ['District',  `D${cam.district} · ${cam.distName}`],
+    ['County',    cam.county || '—'],
+    ['Elevation', cam.elevation != null ? `${cam.elevation} ft` : '—'],
+    ['Location',  `${cam.lat.toFixed(5)}, ${cam.lng.toFixed(5)}`],
+    ...(cam.dist != null ? [['Distance', formatDist(cam.dist) + ' away']] : []),
+  ];
+  document.getElementById('camDetails').innerHTML = details.map(([k,v]) =>
+    `<div class="detail-row"><span class="detail-label">${k}</span><span class="detail-value">${escHtml(String(v))}</span></div>`
+  ).join('');
+
+  // Timestamp
+  document.getElementById('camTimestamp').textContent = 'Just now';
+
+  // Open panel
+  document.getElementById('camPanel').classList.add('open');
+  if (isMobile()) document.getElementById('backdrop').classList.remove('hidden');
+
+  // Fly to camera on map
+  map.setView([cam.lat, cam.lng], Math.max(map.getZoom(), 13), { animate: true, duration: .8 });
+
+  // Highlight marker
+  highlightMarker(cam.id);
+
+  // Update list active state
+  document.querySelectorAll('.cam-list-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.id === cam.id);
+  });
+
+  // Scroll list item into view
+  const listItem = document.querySelector(`.cam-list-item[data-id="${cam.id}"]`);
+  listItem?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function openCameraById(id) {
+  const cam = allCameras.find(c => c.id === id);
+  if (cam) openCamera(cam);
+}
+window.openCameraById = openCameraById; // expose for popup onclick
+
+function closePanel() {
+  document.getElementById('camPanel').classList.remove('open');
+  document.getElementById('backdrop').classList.add('hidden');
+  stopAutoRefresh();
+  selectedCam = null;
+  highlightMarker(null);
+}
+
+function loadCameraImage(cam) {
+  if (!cam.imageUrl) {
+    showImageError();
+    return;
+  }
+
+  const img     = document.getElementById('camImage');
+  const loading = document.getElementById('camImageLoading');
+  const overlay = document.getElementById('camImageOverlay');
+
+  loading.classList.remove('hidden');
+  overlay.classList.add('hidden');
+  img.style.opacity = '0';
+
+  const src = `${cam.imageUrl}?t=${Date.now()}`;
+
+  const tmp = new Image();
+  tmp.onload = () => {
+    img.src = src;
+    img.style.opacity = '1';
+    loading.classList.add('hidden');
+    document.getElementById('camTimestamp').textContent = new Date().toLocaleTimeString();
+  };
+  tmp.onerror = () => {
+    loading.classList.add('hidden');
+    showImageError();
+  };
+  tmp.src = src;
+}
+
+function showImageError() {
+  document.getElementById('camImage').src = '';
+  document.getElementById('camImageOverlay').classList.remove('hidden');
+}
+
+function highlightMarker(id) {
+  markers.forEach((m, mId) => {
+    const dot = m.getElement()?.querySelector('.cam-dot');
+    if (dot) dot.classList.toggle('active-selected', mId === id);
+  });
+}
+
+// ── Auto Refresh ────────────────────────────
+function startAutoRefresh() {
+  stopAutoRefresh();
+  const btn = document.getElementById('autoRefreshBtn');
+  btn.classList.add('active-refresh');
+  btn.dataset.active = 'true';
+  btn.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+    </svg> Stop Auto`;
+
+  imageRefreshTimer = setInterval(() => {
+    if (selectedCam) loadCameraImage(selectedCam);
+  }, REFRESH_SEC * 1000);
+}
+
+function stopAutoRefresh() {
+  if (imageRefreshTimer) { clearInterval(imageRefreshTimer); imageRefreshTimer = null; }
+  const btn = document.getElementById('autoRefreshBtn');
+  if (btn) {
+    btn.classList.remove('active-refresh');
+    btn.dataset.active = 'false';
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+      </svg> Auto Refresh`;
+  }
+}
+
+// ── User Location ───────────────────────────
+let userMarker = null;
+
+function locateUser() {
+  const btn = document.getElementById('locateBtn');
+  btn.classList.add('spinning');
+
+  if (!navigator.geolocation) {
+    showToast('Geolocation not supported by your browser', 'error');
+    btn.classList.remove('spinning');
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      userLatLng = { lat, lng };
+      btn.classList.remove('spinning');
+      btn.classList.add('active');
+
+      placeUserMarker(lat, lng);
+      updateUserDistances();
+      applyFilter(); // resort by distance
+      map.setView([lat, lng], 12, { animate: true, duration: 1 });
+      showToast('Location found — cameras sorted by distance', 'success', 3000);
+    },
+    err => {
+      btn.classList.remove('spinning');
+      const msg = err.code === 1 ? 'Location permission denied'
+                : err.code === 2 ? 'Position unavailable'
+                : 'Location request timed out';
+      showToast(msg, 'error', 4000);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+  );
+}
+
+function placeUserMarker(lat, lng) {
+  if (userMarker) userMarker.remove();
+  const icon = L.divIcon({
+    html: '<div class="user-dot"></div>',
+    className: '',
+    iconSize: [14,14],
+    iconAnchor: [7,7],
+  });
+  userMarker = L.marker([lat, lng], { icon, zIndexOffset: 2000 })
+    .addTo(map)
+    .bindTooltip('Your Location', { permanent: false, direction: 'top', offset: [0,-8] });
+}
+
+function updateUserDistances() {
+  if (!userLatLng) return;
+  allCameras.forEach(cam => {
+    cam.dist = haversine(userLatLng.lat, userLatLng.lng, cam.lat, cam.lng);
+  });
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 3958.8; // miles
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function toRad(d) { return d * Math.PI / 180; }
+function formatDist(miles) {
+  if (miles < 0.1) return `${Math.round(miles * 5280)} ft`;
+  return `${miles.toFixed(miles < 10 ? 1 : 0)} mi`;
+}
+
+// ── Near Me ─────────────────────────────────
+function handleNearMe() {
+  if (!userLatLng) {
+    locateUser();
+    return;
+  }
+  // Already have location — fly to user and highlight nearest
+  map.setView([userLatLng.lat, userLatLng.lng], 13, { animate: true, duration: 1 });
+  applyFilter();
+}
+
+// ── Loading / Toast ─────────────────────────
+function showLoading(visible, text = '') {
+  const el = document.getElementById('mapLoading');
+  el.classList.toggle('hidden', !visible);
+  if (text) document.getElementById('loadingText').textContent = text;
+}
+
+let toastTimer = null;
+function showToast(msg, type = '', duration = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast${type ? ' ' + type : ''}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), duration);
+}
+
+function showListPlaceholder(msg) {
+  document.getElementById('sidebarList').innerHTML =
+    `<div class="list-placeholder"><p>${escHtml(msg)}</p></div>`;
+}
+
+// ── Sidebar (mobile) ────────────────────────
+function toggleSidebarMobile() {
+  const sidebar  = document.getElementById('sidebar');
+  const backdrop = document.getElementById('backdrop');
+  sidebarOpen = !sidebarOpen;
+  sidebar.classList.toggle('mobile-open', sidebarOpen);
+  backdrop.classList.toggle('hidden', !sidebarOpen);
+  // Close panel if open
+  if (sidebarOpen && document.getElementById('camPanel').classList.contains('open')) {
+    closePanel();
+  }
+}
+
+function closeSidebarMobile() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.remove('mobile-open');
+  document.getElementById('backdrop').classList.add('hidden');
+  sidebarOpen = false;
+}
+
+// ── Helpers ─────────────────────────────────
+function isMobile() { return window.innerWidth <= 768; }
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Event Wiring ────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+
+  // Menu toggle
+  document.getElementById('menuBtn').addEventListener('click', () => {
+    if (isMobile()) {
+      toggleSidebarMobile();
+    } else {
+      document.getElementById('sidebar').classList.toggle('collapsed');
+    }
+  });
+
+  // Search
+  const searchInput = document.getElementById('searchInput');
+  const clearBtn    = document.getElementById('clearSearch');
+
+  searchInput.addEventListener('input', e => {
+    searchQuery = e.target.value;
+    clearBtn.classList.toggle('hidden', !searchQuery);
+    applyFilter();
+  });
+  clearBtn.addEventListener('click', () => {
+    searchInput.value = '';
+    searchQuery = '';
+    clearBtn.classList.add('hidden');
+    applyFilter();
+    searchInput.focus();
+  });
+
+  // District chips
+  document.querySelectorAll('.district-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.district-chip').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeDistrict = btn.dataset.district;
+      applyFilter();
+    });
+  });
+
+  // Locate / refresh
+  document.getElementById('locateBtn').addEventListener('click', locateUser);
+  document.getElementById('refreshBtn').addEventListener('click', () => {
+    const btn = document.getElementById('refreshBtn');
+    btn.classList.add('spinning');
+    loadAllCameras().finally(() => btn.classList.remove('spinning'));
+  });
+
+  // Near Me
+  document.getElementById('nearMeBtn').addEventListener('click', handleNearMe);
+
+  // Panel close
+  document.getElementById('closePanelBtn').addEventListener('click', closePanel);
+  document.getElementById('backdrop').addEventListener('click', () => {
+    if (sidebarOpen) closeSidebarMobile();
+    else closePanel();
+  });
+
+  // Camera refresh
+  document.getElementById('camRefreshBtn').addEventListener('click', () => {
+    if (selectedCam) loadCameraImage(selectedCam);
+  });
+
+  // Auto-refresh toggle
+  document.getElementById('autoRefreshBtn').addEventListener('click', () => {
+    const btn = document.getElementById('autoRefreshBtn');
+    if (btn.dataset.active === 'true') stopAutoRefresh();
+    else startAutoRefresh();
+  });
+
+  // Center on map
+  document.getElementById('camMapBtn').addEventListener('click', () => {
+    if (selectedCam) map.setView([selectedCam.lat, selectedCam.lng], 15, { animate: true });
+  });
+
+  // Map click — close panel on blank map click (mobile)
+  map.on('click', () => {
+    if (isMobile() && document.getElementById('camPanel').classList.contains('open')) {
+      closePanel();
+    }
+  });
+
+  // Keyboard shortcut: Escape
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (document.getElementById('camPanel').classList.contains('open')) closePanel();
+      if (sidebarOpen) closeSidebarMobile();
+    }
+  });
+
+  // Start
+  loadAllCameras();
+});

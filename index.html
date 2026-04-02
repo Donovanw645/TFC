@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="Live California traffic cameras from Caltrans — map-based viewer with your location">
+  <title>CA Traffic Cams</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="app-header" id="appHeader">
+  <div class="header-left">
+    <button class="icon-btn menu-btn" id="menuBtn" aria-label="Toggle sidebar" title="Toggle sidebar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <div class="brand">
+      <span class="brand-icon">🚦</span>
+      <span class="brand-name">CA Traffic Cams</span>
+    </div>
+  </div>
+
+  <div class="search-wrapper" id="searchWrapper">
+    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+    </svg>
+    <input type="search" id="searchInput" class="search-input" placeholder="Search cameras, roads…" autocomplete="off" autocorrect="off" spellcheck="false">
+    <button class="clear-search hidden" id="clearSearch" aria-label="Clear search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="header-right">
+    <button class="icon-btn" id="locateBtn" aria-label="Find my location" title="Find my location">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+        <circle cx="12" cy="12" r="8" opacity=".3"/>
+      </svg>
+    </button>
+    <button class="icon-btn" id="refreshBtn" aria-label="Refresh cameras" title="Refresh cameras">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+        <path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+        <path d="M8 16H3v5"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<!-- ── District Filter Bar ── -->
+<div class="district-bar" id="districtBar">
+  <div class="district-scroll">
+    <button class="district-chip active" data-district="all">All Districts</button>
+    <button class="district-chip" data-district="1">D1 · Eureka</button>
+    <button class="district-chip" data-district="2">D2 · Redding</button>
+    <button class="district-chip" data-district="3">D3 · Marysville</button>
+    <button class="district-chip" data-district="4">D4 · Bay Area</button>
+    <button class="district-chip" data-district="5">D5 · SLO</button>
+    <button class="district-chip" data-district="6">D6 · Fresno</button>
+    <button class="district-chip" data-district="7">D7 · LA</button>
+    <button class="district-chip" data-district="8">D8 · San Bern.</button>
+    <button class="district-chip" data-district="9">D9 · Bishop</button>
+    <button class="district-chip" data-district="10">D10 · Stockton</button>
+    <button class="district-chip" data-district="11">D11 · San Diego</button>
+    <button class="district-chip" data-district="12">D12 · Orange Co.</button>
+  </div>
+</div>
+
+<!-- ── Main Layout ── -->
+<div class="app-body" id="appBody">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title" id="sidebarTitle">Nearby Cameras</span>
+      <div class="cam-count" id="camCount">—</div>
+    </div>
+
+    <div class="sidebar-list" id="sidebarList">
+      <div class="list-placeholder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14M3 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/>
+        </svg>
+        <p>Loading cameras…</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Map -->
+  <div class="map-container">
+    <div id="map"></div>
+
+    <!-- Map Controls -->
+    <div class="map-controls">
+      <button class="map-btn" id="nearMeBtn" title="Sort by nearest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+        </svg>
+        <span>Near Me</span>
+      </button>
+    </div>
+
+    <!-- Loading overlay -->
+    <div class="map-loading" id="mapLoading">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loadingText">Loading cameras…</div>
+    </div>
+
+    <!-- Status toast -->
+    <div class="toast hidden" id="toast"></div>
+  </div>
+
+</div>
+
+<!-- ── Camera Detail Panel ── -->
+<div class="cam-panel" id="camPanel">
+  <div class="cam-panel-drag" id="camPanelDrag"></div>
+
+  <div class="cam-panel-header">
+    <div class="cam-panel-title-wrap">
+      <div class="cam-panel-title" id="camPanelTitle">Camera</div>
+      <div class="cam-panel-sub" id="camPanelSub"></div>
+    </div>
+    <div class="cam-panel-badges" id="camPanelBadges"></div>
+    <button class="icon-btn close-panel-btn" id="closePanelBtn" aria-label="Close panel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="cam-image-wrap" id="camImageWrap">
+    <img id="camImage" class="cam-image" alt="Camera feed" loading="lazy">
+    <div class="cam-image-overlay hidden" id="camImageOverlay">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48" opacity=".5">
+        <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14M3 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/>
+      </svg>
+      <p>No image available</p>
+    </div>
+    <div class="cam-image-loading" id="camImageLoading">
+      <div class="spinner sm"></div>
+    </div>
+    <div class="cam-refresh-overlay">
+      <button class="cam-refresh-btn" id="camRefreshBtn" title="Refresh image">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+          <path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+          <path d="M8 16H3v5"/>
+        </svg>
+      </button>
+      <span class="cam-timestamp" id="camTimestamp"></span>
+    </div>
+  </div>
+
+  <!-- Stream button (shown when stream URL available) -->
+  <div id="streamSection" class="hidden">
+    <a id="streamBtn" class="stream-btn" href="#" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+        <path d="M8 5v14l11-7z"/>
+      </svg>
+      Watch Live Stream
+    </a>
+  </div>
+
+  <div class="cam-details" id="camDetails"></div>
+
+  <div class="cam-panel-actions">
+    <button class="action-btn secondary" id="camMapBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 20l-5.447-2.724A1 1 0 0 1 3 16.382V5.618a1 1 0 0 1 1.447-.894L9 7m0 13l6-3m-6-10l6-3m0 13l5.447 2.724A1 1 0 0 0 21 18.382V7.618a1 1 0 0 0-1.447-.894L15 10m0 7V10"/>
+      </svg>
+      Center on Map
+    </button>
+    <button class="action-btn primary" id="autoRefreshBtn" data-active="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+      </svg>
+      Auto Refresh
+    </button>
+  </div>
+</div>
+
+<!-- ── Backdrop (mobile) ── -->
+<div class="backdrop hidden" id="backdrop"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
+<script src="js/app.js"></script>
+</body>
+</html>
