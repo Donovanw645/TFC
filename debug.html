@@ -46,11 +46,12 @@ async function test(label, url, opts) {
     clearTimeout(timer);
     var text = await r.text();
     var elapsed = Date.now() - t;
-    var preview = text.slice(0, 300);
+    // Show first camera object in full so we can see field names
+    var preview = text.slice(0, 800);
     el.className = 'row ' + (r.ok ? 'ok' : 'fail');
     el.innerHTML = '<div class="label">' + escHtml(label) + '</div>'
       + '<div class="val">HTTP ' + r.status + ' · ' + elapsed + 'ms · ' + text.length + ' bytes<br>'
-      + escHtml(preview) + (text.length > 300 ? '…' : '') + '</div>';
+      + escHtml(preview) + (text.length > 800 ? '…' : '') + '</div>';
   } catch(e) {
     var elapsed2 = Date.now() - t;
     el.className = 'row fail';

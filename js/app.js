@@ -138,10 +138,12 @@ function normalizeArcGIS(feature) {
 }
 
 // ── CWWP2 district JSON (fallback) ──────────
+// corsproxy.io confirmed working on iOS Safari — try it first.
+// Direct ('') hangs without a CORS error so it's last to avoid a 12s wait.
 const PROXIES = [
-  '',
   'https://corsproxy.io/?',
   'https://api.allorigins.win/raw?url=',
+  '',
 ];
 
 function cwwp2Url(d, proxy) {
@@ -170,12 +172,19 @@ async function fetchFromCWWP2(proxy) {
 
 async function fetchDistrict(d, proxy) {
   try {
-    const resp = await fetchWithTimeout(cwwp2Url(d, proxy), 12000, { cache: 'no-store' });
+    const resp = await fetchWithTimeout(cwwp2Url(d, proxy), 12000, { mode: 'cors' });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const json = await resp.json();
 
-    const root    = (json.data && json.data['d' + d]) || json.data || json;
-    const rawList = root.cctv || root.cameras || root.items || [];
+    // Confirmed CWWP2 format: { "data": [ { "cctv": {...} }, ... ] }
+    // Also handle legacy keyed format: { "data": { "d7": { "cctv": [...] } } }
+    let rawList;
+    if (Array.isArray(json.data)) {
+      rawList = json.data;
+    } else {
+      const root = (json.data && json.data['d' + d]) || json.data || json;
+      rawList = root.cctv || root.cameras || root.items || [];
+    }
     if (!Array.isArray(rawList)) return [];
 
     return rawList
