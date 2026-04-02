@@ -821,11 +821,9 @@ function showListPlaceholder(msg) {
 
 // ── Sidebar (mobile) ────────────────────────
 function toggleSidebarMobile() {
-  const sidebar  = document.getElementById('sidebar');
-  const backdrop = document.getElementById('backdrop');
+  const sidebar = document.getElementById('sidebar');
   sidebarOpen = !sidebarOpen;
   sidebar.classList.toggle('mobile-open', sidebarOpen);
-  backdrop.classList.toggle('hidden', !sidebarOpen);
   // Close panel if open
   if (sidebarOpen && document.getElementById('camPanel').classList.contains('open')) {
     closePanel();
@@ -835,7 +833,6 @@ function toggleSidebarMobile() {
 function closeSidebarMobile() {
   const sidebar = document.getElementById('sidebar');
   sidebar.classList.remove('mobile-open');
-  document.getElementById('backdrop').classList.add('hidden');
   sidebarOpen = false;
 }
 
@@ -906,10 +903,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Panel close
   document.getElementById('closePanelBtn').addEventListener('click', closePanel);
-  document.getElementById('backdrop').addEventListener('click', () => {
-    if (sidebarOpen) closeSidebarMobile();
-    else closePanel();
-  });
+  document.getElementById('backdrop').addEventListener('click', closePanel);
+  map.on('click', () => { if (sidebarOpen) closeSidebarMobile(); });
 
   // Camera refresh
   document.getElementById('camRefreshBtn').addEventListener('click', () => {
