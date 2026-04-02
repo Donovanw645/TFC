@@ -216,9 +216,6 @@ const map = L.map('map', {
   zoom: 6,
   zoomControl: true,
   attributionControl: true,
-  zoomSnap: 0,
-  zoomDelta: 0.5,
-  wheelPxPerZoomLevel: 80,
 });
 
 // Dark CartoDB tiles
