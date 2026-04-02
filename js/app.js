@@ -17,10 +17,19 @@ const DISTRICT_NAMES = {
   11:'San Diego', 12:'Orange County'
 };
 
-// Build district JSON URL
-function districtUrl(d) {
+// CORS proxies tried in order; empty string = direct
+const PROXIES = [
+  '',
+  'https://corsproxy.io/?',
+  'https://api.allorigins.win/raw?url=',
+];
+let activeProxy = ''; // resolved once on first successful fetch
+
+// Build district JSON URL (optionally wrapped in proxy)
+function districtUrl(d, proxy = activeProxy) {
   const pad = String(d).padStart(2,'0');
-  return `${BASE_URL}/data/d${d}/cctv/cctvStatusD${pad}.json`;
+  const url = `${BASE_URL}/data/d${d}/cctv/cctvStatusD${pad}.json`;
+  return proxy ? `${proxy}${encodeURIComponent(url)}` : url;
 }
 
 // Build image URL from camera ID and district
@@ -123,11 +132,34 @@ function normalizeCamera(raw, district) {
   };
 }
 
+// ── Proxy detection ────────────────────────
+async function resolveProxy() {
+  // Try each proxy in order using district 7 (LA) as a test
+  for (const proxy of PROXIES) {
+    try {
+      const url = districtUrl(7, proxy);
+      const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (resp.ok) { activeProxy = proxy; return true; }
+    } catch { /* try next */ }
+  }
+  return false;
+}
+
 // ── Fetch all district data ─────────────────
 async function loadAllCameras() {
-  showLoading(true, 'Loading cameras…');
+  showLoading(true, 'Connecting to Caltrans…');
   const startTime = Date.now();
 
+  // Detect proxy once before parallel fetches
+  const canConnect = await resolveProxy();
+  if (!canConnect) {
+    showLoading(false);
+    showToast('Could not reach Caltrans data. Check your connection.', 'error', 6000);
+    showListPlaceholder('Unable to load cameras. Try refreshing.');
+    return;
+  }
+
+  showLoading(true, 'Loading cameras…');
   const results = await Promise.allSettled(
     DISTRICTS.map(d => fetchDistrict(d))
   );
@@ -165,8 +197,8 @@ async function loadAllCameras() {
 
 async function fetchDistrict(d) {
   try {
-    const url = districtUrl(d);
-    const resp = await fetch(url, { cache: 'no-store' });
+    const url = districtUrl(d); // uses activeProxy already set
+    const resp = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(12000) });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const json = await resp.json();
 
