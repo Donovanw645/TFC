@@ -17,24 +17,130 @@ const DISTRICT_NAMES = {
   11:'San Diego', 12:'Orange County'
 };
 
-// CORS proxies tried in order; empty string = direct
+// Build image URL from camera ID and district
+function imageUrl(camId, district) {
+  return `${BASE_URL}/data/d${district}/cctv/image/${camId}/${camId}.jpg`;
+}
+
+// ── Fetch helper (iOS Safari-safe timeout) ──
+function fetchWithTimeout(url, ms, opts) {
+  ms = ms || 12000;
+  opts = opts || {};
+  var ctrl = new AbortController();
+  var timer = setTimeout(function() { ctrl.abort(); }, ms);
+  return fetch(url, Object.assign({}, opts, { signal: ctrl.signal }))
+    .then(function(r) { clearTimeout(timer); return r; },
+          function(e) { clearTimeout(timer); throw e; });
+}
+
+// ── ArcGIS FeatureServer (primary source) ──
+const ARCGIS_URL = 'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query';
+
+async function fetchFromArcGIS() {
+  const cameras = [];
+  let offset = 0;
+  const pageSize = 2000;
+
+  while (true) {
+    const params = new URLSearchParams({
+      where: '1=1', outFields: '*', returnGeometry: 'true',
+      outSR: '4326', f: 'json',
+      resultRecordCount: String(pageSize), resultOffset: String(offset),
+    });
+    const resp = await fetchWithTimeout(`${ARCGIS_URL}?${params}`, 15000);
+    if (!resp.ok) throw new Error('ArcGIS HTTP ' + resp.status);
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message || 'ArcGIS error');
+
+    (data.features || []).forEach(f => {
+      try {
+        const c = normalizeArcGIS(f);
+        if (c.lat && c.lng) cameras.push(c);
+      } catch(e) {}
+    });
+
+    if ((data.features || []).length < pageSize || !data.exceededTransferLimit) break;
+    offset += pageSize;
+  }
+  return cameras;
+}
+
+function normalizeArcGIS(feature) {
+  const a = feature.attributes || {};
+  const g = feature.geometry   || {};
+
+  const lat = parseFloat(g.y || a.Latitude  || a.latitude  || 0);
+  const lng = parseFloat(g.x || a.Longitude || a.longitude || 0);
+
+  const district = parseInt(a.District || a.DistrictNumber || a.DISTRICT || 0) || 0;
+  const id   = String(a.CameraID || a.cctvID || a.ID || a.OBJECTID || '');
+  const name = a.CameraName || a.LocationDescription || a.Description || ('Camera ' + id);
+
+  const img = (id && district) ? imageUrl(id, district) : '';
+
+  const cond   = String(a.CctvCondition || a.Status || a.Condition || '').toLowerCase();
+  const status = cond.includes('active')   ? 'active'
+               : cond.includes('inactive') ? 'inactive'
+               : cond.includes('offline')  ? 'inactive' : 'unknown';
+
+  return {
+    id, name, lat, lng, district,
+    roadway:     String(a.Route       || a.Roadway  || a.Highway || ''),
+    direction:   String(a.Direction   || a.Dir      || ''),
+    description: String(a.LocationDescription || a.Description || name),
+    county:      String(a.County      || ''),
+    elevation:   a.Elevation != null ? a.Elevation : null,
+    imageUrl: img, streamUrl: null, status,
+    distName: DISTRICT_NAMES[district] || ('District ' + district),
+    dist: null,
+  };
+}
+
+// ── CWWP2 district JSON (fallback) ──────────
 const PROXIES = [
   '',
   'https://corsproxy.io/?',
   'https://api.allorigins.win/raw?url=',
 ];
-let activeProxy = ''; // resolved once on first successful fetch
 
-// Build district JSON URL (optionally wrapped in proxy)
-function districtUrl(d, proxy = activeProxy) {
-  const pad = String(d).padStart(2,'0');
-  const url = `${BASE_URL}/data/d${d}/cctv/cctvStatusD${pad}.json`;
-  return proxy ? `${proxy}${encodeURIComponent(url)}` : url;
+function cwwp2Url(d, proxy) {
+  proxy = proxy || '';
+  const pad = String(d).padStart(2, '0');
+  const url = BASE_URL + '/data/d' + d + '/cctv/cctvStatusD' + pad + '.json';
+  return proxy ? proxy + encodeURIComponent(url) : url;
 }
 
-// Build image URL from camera ID and district
-function imageUrl(camId, district) {
-  return `${BASE_URL}/data/d${district}/cctv/image/${camId}/${camId}.jpg`;
+async function detectWorkingProxy() {
+  for (const proxy of PROXIES) {
+    try {
+      const resp = await fetchWithTimeout(cwwp2Url(7, proxy), 8000, { cache: 'no-store' });
+      if (resp.ok) return proxy;
+    } catch(e) {}
+  }
+  return null;
+}
+
+async function fetchFromCWWP2(proxy) {
+  const results = await Promise.allSettled(DISTRICTS.map(d => fetchDistrict(d, proxy)));
+  return results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+}
+
+async function fetchDistrict(d, proxy) {
+  try {
+    const resp = await fetchWithTimeout(cwwp2Url(d, proxy), 12000, { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+
+    const root    = (json.data && json.data['d' + d]) || json.data || json;
+    const rawList = root.cctv || root.cameras || root.items || [];
+    if (!Array.isArray(rawList)) return [];
+
+    return rawList
+      .map(raw => { try { return normalizeCamera(raw, d); } catch(e) { return null; } })
+      .filter(c => c && c.lat && c.lng);
+  } catch(e) {
+    return [];
+  }
 }
 
 // ── State ──────────────────────────────────
@@ -132,92 +238,51 @@ function normalizeCamera(raw, district) {
   };
 }
 
-// ── Proxy detection ────────────────────────
-async function resolveProxy() {
-  // Try each proxy in order using district 7 (LA) as a test
-  for (const proxy of PROXIES) {
-    try {
-      const url = districtUrl(7, proxy);
-      const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      if (resp.ok) { activeProxy = proxy; return true; }
-    } catch { /* try next */ }
-  }
-  return false;
-}
-
-// ── Fetch all district data ─────────────────
+// ── Load all cameras (ArcGIS → CWWP2 fallback) ─
 async function loadAllCameras() {
   showLoading(true, 'Connecting to Caltrans…');
   const startTime = Date.now();
+  let cameras = [];
 
-  // Detect proxy once before parallel fetches
-  const canConnect = await resolveProxy();
-  if (!canConnect) {
-    showLoading(false);
-    showToast('Could not reach Caltrans data. Check your connection.', 'error', 6000);
-    showListPlaceholder('Unable to load cameras. Try refreshing.');
-    return;
+  // Strategy 1: ArcGIS FeatureServer
+  try {
+    showLoading(true, 'Loading via ArcGIS…');
+    cameras = await fetchFromArcGIS();
+    console.log('[ArcGIS] loaded', cameras.length, 'cameras');
+  } catch(e) {
+    console.warn('[ArcGIS] failed:', e.message);
   }
 
-  showLoading(true, 'Loading cameras…');
-  const results = await Promise.allSettled(
-    DISTRICTS.map(d => fetchDistrict(d))
-  );
-
-  const cameras = [];
-  let failCount = 0;
-
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled' && r.value.length) {
-      cameras.push(...r.value);
-    } else {
-      failCount++;
+  // Strategy 2: CWWP2 district JSON + proxy cycling
+  if (!cameras.length) {
+    showLoading(true, 'Trying fallback source…');
+    const proxy = await detectWorkingProxy();
+    if (proxy !== null) {
+      try {
+        cameras = await fetchFromCWWP2(proxy);
+        console.log('[CWWP2] loaded', cameras.length, 'cameras, proxy="' + (proxy || 'direct') + '"');
+      } catch(e) {
+        console.warn('[CWWP2] failed:', e.message);
+      }
     }
-  });
+  }
 
   allCameras = cameras.filter(c => c.lat !== 0 && c.lng !== 0);
 
-  if (allCameras.length === 0) {
+  if (!allCameras.length) {
     showLoading(false);
-    showToast('Could not load camera data. Check your connection.', 'error', 5000);
-    showListPlaceholder('Unable to load cameras. Try refreshing.');
+    showToast('Could not load cameras — tap ↺ to retry', 'error', 6000);
+    showListPlaceholder('No cameras loaded. Tap the refresh button to retry.');
     return;
   }
 
-  // Sort by district then name
-  allCameras.sort((a,b) => a.district - b.district || a.name.localeCompare(b.name));
-
+  allCameras.sort((a, b) => a.district - b.district || a.name.localeCompare(b.name));
   updateUserDistances();
   applyFilter();
   showLoading(false);
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  showToast(`Loaded ${allCameras.length.toLocaleString()} cameras in ${elapsed}s`, 'success', 3000);
-}
-
-async function fetchDistrict(d) {
-  try {
-    const url = districtUrl(d); // uses activeProxy already set
-    const resp = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(12000) });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const json = await resp.json();
-
-    // Navigate nested structure: json.data.d{N}.cctv or json.cctv
-    const distKey = `d${d}`;
-    const root  = json?.data?.[distKey] ?? json?.data ?? json;
-    const rawList = root?.cctv ?? root?.cameras ?? root?.items ?? [];
-
-    if (!Array.isArray(rawList)) return [];
-
-    return rawList
-      .map(raw => {
-        try { return normalizeCamera(raw, d); }
-        catch { return null; }
-      })
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
+  showToast('Loaded ' + allCameras.length.toLocaleString() + ' cameras in ' + elapsed + 's', 'success', 3000);
 }
 
 // ── Filter & Render ─────────────────────────
