@@ -451,6 +451,8 @@ svg { flex-shrink: 0; }
   left: 50%;
   transform: translateX(-50%);
   z-index: 500;
+  display: flex;
+  gap: 8px;
 }
 .map-btn {
   display: flex;
@@ -470,6 +472,11 @@ svg { flex-shrink: 0; }
 }
 .map-btn svg { width: 16px; height: 16px; color: var(--accent); }
 .map-btn:hover { background: var(--bg-hover); border-color: var(--accent); color: var(--accent); }
+.map-btn.btn-active { background: rgba(59,130,246,.15); border-color: var(--accent); color: var(--accent); }
+
+/* ── Live video ── */
+#camVideo { background: #000; }
+#camVideo::-webkit-media-controls { opacity: .7; }
 
 /* ── Map Loading ── */
 .map-loading {
@@ -679,26 +686,40 @@ svg { flex-shrink: 0; }
   border-radius: 4px;
 }
 
-/* ── Stream Button ── */
-.stream-btn {
+/* ── Feed tabs (Still / Live) ── */
+.feed-tabs {
+  position: absolute;
+  top: 8px; left: 8px;
+  z-index: 10;
+  display: flex;
+  gap: 4px;
+}
+.feed-tab {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 10px 14px 0;
-  height: 36px;
-  background: rgba(239,68,68,.12);
-  border: 1px solid rgba(239,68,68,.3);
-  border-radius: var(--radius-sm);
-  color: #f87171;
-  font-size: 13px;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 600;
+  background: rgba(15,23,42,.75);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border-md);
+  color: var(--text-sub);
   transition: all var(--transition);
-  flex-shrink: 0;
 }
-.stream-btn:hover {
-  background: rgba(239,68,68,.2);
-  border-color: rgba(239,68,68,.5);
+.feed-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.feed-tab.hidden { display: none; }
+.live-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: pulse 1.5s ease infinite;
 }
 
 /* ── Camera Details ── */

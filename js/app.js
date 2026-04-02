@@ -196,17 +196,20 @@ async function fetchDistrict(d, proxy) {
 }
 
 // ── State ──────────────────────────────────
-let allCameras    = [];       // all normalized camera objects
-let filtered      = [];       // currently displayed cameras
-let selectedCam   = null;     // currently selected camera
-let userLatLng    = null;     // { lat, lng }
+let allCameras    = [];
+let filtered      = [];
+let selectedCam   = null;
+let userLatLng    = null;
 let activeDistrict= 'all';
 let searchQuery   = '';
-let autoRefreshTimer = null;
-let imageRefreshTimer= null;
-let sidebarOpen   = false;    // mobile sidebar
-let markers       = new Map();// camId → L.Marker
+let autoRefreshTimer  = null;
+let imageRefreshTimer = null;
+let sidebarOpen   = false;
+let markers       = new Map();
 let markerCluster = null;
+let clusterEnabled = false;   // off by default — show all dots
+let hlsInstance   = null;     // active HLS.js instance
+let activeFeed    = 'still';  // 'still' | 'live'
 
 // ── Map init ───────────────────────────────
 const map = L.map('map', {
@@ -243,7 +246,7 @@ markerCluster = L.markerClusterGroup({
     });
   }
 });
-map.addLayer(markerCluster);
+// markerCluster added/removed dynamically in renderMarkers()
 
 // Actual CWWP2 JSON structure (confirmed from live data):
 // { cctv: { index, recordTimestamp, location: { district, locationName,
@@ -352,8 +355,13 @@ function applyFilter() {
 }
 
 // ── Markers ────────────────────────────────
+let unclustered = null; // L.LayerGroup for non-clustered mode
+
 function renderMarkers() {
+  // Clear both layers
   markerCluster.clearLayers();
+  if (unclustered) { map.removeLayer(unclustered); }
+  unclustered = L.layerGroup();
   markers.clear();
 
   filtered.forEach(cam => {
@@ -369,10 +377,8 @@ function renderMarkers() {
 
     const marker = L.marker([cam.lat, cam.lng], { icon });
     marker.camData = cam;
-
     marker.on('click', () => openCamera(cam, marker));
 
-    // Popup on hover (desktop)
     const popup = L.popup({ maxWidth: 220, className: 'cam-popup', closeButton: false, offset: [0, -6] })
       .setContent(() => buildPopupHtml(cam));
     marker.bindPopup(popup);
@@ -380,8 +386,20 @@ function renderMarkers() {
     marker.on('mouseout',  () => { if (!isMobile()) marker.closePopup(); });
 
     markers.set(cam.id, marker);
-    markerCluster.addLayer(marker);
+    if (clusterEnabled) markerCluster.addLayer(marker);
+    else unclustered.addLayer(marker);
   });
+
+  if (clusterEnabled) map.addLayer(markerCluster);
+  else map.addLayer(unclustered);
+}
+
+function toggleCluster() {
+  clusterEnabled = !clusterEnabled;
+  const btn = document.getElementById('clusterBtn');
+  btn.classList.toggle('btn-active', clusterEnabled);
+  btn.querySelector('span').textContent = clusterEnabled ? 'Uncluster' : 'Cluster';
+  renderMarkers();
 }
 
 function buildPopupHtml(cam) {
@@ -460,17 +478,19 @@ function openCamera(cam, marker) {
   if (cam.streamUrl) badges += `<span class="badge blue">▶ Stream</span>`;
   document.getElementById('camPanelBadges').innerHTML = badges;
 
-  // Load image
-  loadCameraImage(cam);
+  // Reset to still view and stop any running stream
+  stopLiveStream();
+  activeFeed = 'still';
+  document.getElementById('stillView').classList.remove('hidden');
+  document.getElementById('liveView').classList.add('hidden');
+  document.getElementById('tabStill').classList.add('active');
+  document.getElementById('tabLive').classList.remove('active');
 
-  // Stream section
-  const streamSection = document.getElementById('streamSection');
-  if (cam.streamUrl) {
-    document.getElementById('streamBtn').href = cam.streamUrl;
-    streamSection.classList.remove('hidden');
-  } else {
-    streamSection.classList.add('hidden');
-  }
+  // Show/hide Live tab based on stream availability
+  document.getElementById('tabLive').classList.toggle('hidden', !cam.streamUrl);
+
+  // Load still image
+  loadCameraImage(cam);
 
   // Detail rows
   const details = [
@@ -519,8 +539,82 @@ function closePanel() {
   document.getElementById('camPanel').classList.remove('open');
   document.getElementById('backdrop').classList.add('hidden');
   stopAutoRefresh();
+  stopLiveStream();
   selectedCam = null;
+  activeFeed = 'still';
   highlightMarker(null);
+}
+
+// ── Feed tab switching ──────────────────────
+function switchFeed(tab) {
+  activeFeed = tab;
+  document.getElementById('tabStill').classList.toggle('active', tab === 'still');
+  document.getElementById('tabLive').classList.toggle('active', tab === 'live');
+  document.getElementById('stillView').classList.toggle('hidden', tab !== 'still');
+  document.getElementById('liveView').classList.toggle('hidden', tab !== 'live');
+
+  if (tab === 'live' && selectedCam) {
+    startLiveStream(selectedCam);
+  } else {
+    stopLiveStream();
+  }
+}
+
+// ── HLS Live stream ─────────────────────────
+function startLiveStream(cam) {
+  const video   = document.getElementById('camVideo');
+  const loading = document.getElementById('camVideoLoading');
+  const overlay = document.getElementById('camVideoOverlay');
+
+  loading.classList.remove('hidden');
+  overlay.classList.add('hidden');
+  stopLiveStream();
+
+  if (!cam.streamUrl) {
+    loading.classList.add('hidden');
+    overlay.classList.remove('hidden');
+    return;
+  }
+
+  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    // Safari — native HLS
+    video.src = cam.streamUrl;
+    video.load();
+    video.play().catch(() => {});
+    video.addEventListener('canplay', function onCanPlay() {
+      loading.classList.add('hidden');
+      video.removeEventListener('canplay', onCanPlay);
+    }, { once: true });
+    video.addEventListener('error', function onErr() {
+      loading.classList.add('hidden');
+      overlay.classList.remove('hidden');
+      video.removeEventListener('error', onErr);
+    }, { once: true });
+  } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+    // Chrome/Firefox — hls.js
+    hlsInstance = new Hls({ enableWorker: false });
+    hlsInstance.loadSource(cam.streamUrl);
+    hlsInstance.attachMedia(video);
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
+      loading.classList.add('hidden');
+      video.play().catch(() => {});
+    });
+    hlsInstance.on(Hls.Events.ERROR, function(e, data) {
+      if (data.fatal) {
+        loading.classList.add('hidden');
+        overlay.classList.remove('hidden');
+      }
+    });
+  } else {
+    loading.classList.add('hidden');
+    overlay.classList.remove('hidden');
+  }
+}
+
+function stopLiveStream() {
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+  const video = document.getElementById('camVideo');
+  if (video) { video.pause(); video.src = ''; video.load(); }
 }
 
 function loadCameraImage(cam) {
@@ -788,6 +882,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Near Me
   document.getElementById('nearMeBtn').addEventListener('click', handleNearMe);
+
+  // Cluster toggle
+  document.getElementById('clusterBtn').addEventListener('click', toggleCluster);
+
+  // Feed tabs
+  document.getElementById('tabStill').addEventListener('click', () => switchFeed('still'));
+  document.getElementById('tabLive').addEventListener('click',  () => switchFeed('live'));
 
   // Panel close
   document.getElementById('closePanelBtn').addEventListener('click', closePanel);
