@@ -245,77 +245,65 @@ markerCluster = L.markerClusterGroup({
 });
 map.addLayer(markerCluster);
 
-// ── Camera Normalization ────────────────────
-/**
- * Parse a raw camera record from Caltrans JSON into a normalized object.
- * The CWWP2 JSON wraps each record under a nested `cctv` key.
- */
+// Actual CWWP2 JSON structure (confirmed from live data):
+// { cctv: { index, recordTimestamp, location: { district, locationName,
+//   nearbyPlace, latitude, longitude, elevation, direction, county, route, ... },
+//   inService, imageData: { streamingVideoURL, static: { currentImageURL, ... } } } }
 function normalizeCamera(raw, district) {
-  // Handle double-wrapped: { cctv: { cctv: { ... } } } or { cctv: { ... } }
-  const c = raw.cctv?.cctv ?? raw.cctv ?? raw;
+  var c = (raw.cctv && raw.cctv.cctv) ? raw.cctv.cctv : (raw.cctv || raw);
+  var loc      = c.location  || {};
+  var imgBlock = c.imageData || {};
+  var imgData  = imgBlock['static'] || {};
 
-  const loc     = c.location ?? {};
-  const imgData = c.imageData?.static ?? c.imageData ?? {};
-  const streams = c.streamingVideoList?.streamingVideo ?? [];
+  // Extract camera ID from embedded image URL (no explicit cctvID field)
+  var imgUrl  = imgData.currentImageURL || imgData.imageURL || '';
+  var idMatch = imgUrl.match(/\/image\/([^/]+)\//);
+  var id      = c.cctvID || c.id || (idMatch ? idMatch[1] : '') || String(c.index || '');
 
-  const id   = c.cctvID   ?? c.id ?? '';
-  const name = c.cctvName ?? c.name ?? c.locationDescription ?? `Camera ${id}`;
-  const lat  = parseFloat(loc.latitude  ?? loc.lat ?? 0);
-  const lng  = parseFloat(loc.longitude ?? loc.lng ?? loc.lon ?? 0);
+  var name = c.cctvName || loc.locationName || loc.nearbyPlace || ('Camera ' + id);
+  var lat  = parseFloat(loc.latitude  || loc.lat || 0);
+  var lng  = parseFloat(loc.longitude || loc.lng || loc.lon || 0);
 
-  // Derive image URL — prefer embedded URL, fall back to constructed
-  const imgRaw = imgData.currentImageURL ?? imgData.imageURL ?? imgData.url ?? '';
-  const img    = imgRaw || (id ? imageUrl(id, district) : '');
+  var img       = imgUrl || (id ? imageUrl(id, district) : '');
+  var streamUrl = imgBlock.streamingVideoURL || null;
 
-  // Stream URLs
-  const streamUrl = (streams[0]?.streamingVideoURL) ?? null;
+  // inService:"true"/"false" is the status field
+  var svc    = String(c.inService || c.cctvCondition || '').toLowerCase();
+  var status = (svc === 'true'  || svc.includes('active'))   ? 'active'
+             : (svc === 'false' || svc.includes('inactive')) ? 'inactive'
+             : 'unknown';
 
-  const condition = (c.cctvCondition ?? '').toLowerCase();
-  const status    = condition.includes('active') ? 'active'
-                  : condition.includes('inactive') || condition.includes('offline') ? 'inactive'
-                  : 'unknown';
+  var distNum = parseInt(loc.district || district || 0) || district;
 
   return {
-    id, name, lat, lng, district,
-    roadway: loc.roadway ?? loc.highway ?? '',
-    direction: loc.direction ?? loc.dir ?? '',
-    description: loc.locationDescription ?? loc.description ?? name,
-    county: loc.county ?? '',
-    elevation: loc.elevation ?? null,
-    imageUrl: img,
+    id, name, lat, lng,
+    district:    distNum,
+    roadway:     String(loc.route     || loc.roadway  || loc.highway || ''),
+    direction:   String(loc.direction || loc.dir      || ''),
+    description: String(loc.locationName || loc.nearbyPlace || name),
+    county:      String(loc.county    || ''),
+    elevation:   loc.elevation != null ? parseFloat(loc.elevation) : null,
+    imageUrl:    img,
     streamUrl,
     status,
-    distName: DISTRICT_NAMES[district] ?? `District ${district}`,
-    dist: null, // distance from user, computed later
+    distName: DISTRICT_NAMES[distNum] || ('District ' + distNum),
+    dist: null,
   };
 }
 
-// ── Load all cameras (ArcGIS → CWWP2 fallback) ─
+// ── Load all cameras (CWWP2 via proxy) ─────
 async function loadAllCameras() {
-  showLoading(true, 'Connecting to Caltrans…');
+  showLoading(true, 'Loading cameras…');
   const startTime = Date.now();
   let cameras = [];
 
-  // Strategy 1: ArcGIS FeatureServer
-  try {
-    showLoading(true, 'Loading via ArcGIS…');
-    cameras = await fetchFromArcGIS();
-    console.log('[ArcGIS] loaded', cameras.length, 'cameras');
-  } catch(e) {
-    console.warn('[ArcGIS] failed:', e.message);
-  }
-
-  // Strategy 2: CWWP2 district JSON + proxy cycling
-  if (!cameras.length) {
-    showLoading(true, 'Trying fallback source…');
-    const proxy = await detectWorkingProxy();
-    if (proxy !== null) {
-      try {
-        cameras = await fetchFromCWWP2(proxy);
-        console.log('[CWWP2] loaded', cameras.length, 'cameras, proxy="' + (proxy || 'direct') + '"');
-      } catch(e) {
-        console.warn('[CWWP2] failed:', e.message);
-      }
+  const proxy = await detectWorkingProxy();
+  if (proxy !== null) {
+    try {
+      cameras = await fetchFromCWWP2(proxy);
+      console.log('[CWWP2] loaded', cameras.length, 'cameras via "' + (proxy || 'direct') + '"');
+    } catch(e) {
+      console.warn('[CWWP2] failed:', e.message);
     }
   }
 
