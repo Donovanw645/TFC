@@ -39,17 +39,23 @@ async function test(label, url, opts) {
   var el = mark(label);
   var t = Date.now();
   try {
-    var r = await fetch(url, opts || {});
+    // 10s timeout per test so one hanging request can't block the rest
+    var ctrl = new AbortController();
+    var timer = setTimeout(function(){ ctrl.abort(); }, 10000);
+    var r = await fetch(url, Object.assign({}, opts || {}, { signal: ctrl.signal }));
+    clearTimeout(timer);
     var text = await r.text();
     var elapsed = Date.now() - t;
-    var preview = text.slice(0, 200);
+    var preview = text.slice(0, 300);
     el.className = 'row ' + (r.ok ? 'ok' : 'fail');
     el.innerHTML = '<div class="label">' + escHtml(label) + '</div>'
       + '<div class="val">HTTP ' + r.status + ' · ' + elapsed + 'ms · ' + text.length + ' bytes<br>'
-      + escHtml(preview) + (text.length > 200 ? '…' : '') + '</div>';
+      + escHtml(preview) + (text.length > 300 ? '…' : '') + '</div>';
   } catch(e) {
+    var elapsed2 = Date.now() - t;
     el.className = 'row fail';
-    el.innerHTML = '<div class="label">' + escHtml(label) + '</div><div class="val">ERROR: ' + escHtml(e.message) + '</div>';
+    el.innerHTML = '<div class="label">' + escHtml(label) + '</div>'
+      + '<div class="val">FAILED (' + elapsed2 + 'ms): ' + escHtml(e.message) + '</div>';
   }
 }
 
