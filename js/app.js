@@ -40,6 +40,7 @@ async function fetchFromArcGIS() {
   const cameras = [];
   let offset = 0;
   const pageSize = 2000;
+  let loggedFields = false;
 
   while (true) {
     const params = new URLSearchParams({
@@ -47,19 +48,26 @@ async function fetchFromArcGIS() {
       outSR: '4326', f: 'json',
       resultRecordCount: String(pageSize), resultOffset: String(offset),
     });
-    const resp = await fetchWithTimeout(`${ARCGIS_URL}?${params}`, 15000);
+    const resp = await fetchWithTimeout(`${ARCGIS_URL}?${params}`, 15000, { mode: 'cors' });
     if (!resp.ok) throw new Error('ArcGIS HTTP ' + resp.status);
     const data = await resp.json();
     if (data.error) throw new Error(data.error.message || 'ArcGIS error');
 
-    (data.features || []).forEach(f => {
+    const features = data.features || [];
+    // Log real field names once so we can see what the service actually returns
+    if (!loggedFields && features.length) {
+      console.log('[ArcGIS] field names:', Object.keys(features[0].attributes || {}));
+      loggedFields = true;
+    }
+
+    features.forEach(f => {
       try {
         const c = normalizeArcGIS(f);
         if (c.lat && c.lng) cameras.push(c);
       } catch(e) {}
     });
 
-    if ((data.features || []).length < pageSize || !data.exceededTransferLimit) break;
+    if (features.length < pageSize || !data.exceededTransferLimit) break;
     offset += pageSize;
   }
   return cameras;
@@ -73,12 +81,22 @@ function normalizeArcGIS(feature) {
   const lng = parseFloat(g.x || a.Longitude || a.longitude || 0);
 
   const district = parseInt(a.District || a.DistrictNumber || a.DISTRICT || 0) || 0;
-  const id   = String(a.CameraID || a.cctvID || a.ID || a.OBJECTID || '');
-  const name = a.CameraName || a.LocationDescription || a.Description || ('Camera ' + id);
 
-  const img = (id && district) ? imageUrl(id, district) : '';
+  // Prefer slug-style ID fields; fall back to OBJECTID only if nothing else found.
+  // A slug ID contains letters (e.g. "tvd47i5santaclarita"); a pure numeric ID can't
+  // be used to construct the Caltrans image URL so we leave imageUrl blank in that case.
+  const rawId = a.CameraID || a.cctvID || a.ID || a.Camera_ID || a.CCTV_ID || '';
+  const id    = String(rawId || a.OBJECTID || '');
+  const isSlug = /[a-zA-Z]/.test(id); // slug IDs always contain letters
 
-  const cond   = String(a.CctvCondition || a.Status || a.Condition || '').toLowerCase();
+  const name = a.CameraName || a.Camera_Name || a.LocationDescription
+            || a.Location   || a.Description || ('Camera ' + id);
+
+  // Use embedded image URL if the service provides one, else construct from slug ID
+  const directImg = a.ImageURL || a.image_url || a.Image_URL || a.imageURL || '';
+  const img = directImg || (isSlug && district ? imageUrl(id, district) : '');
+
+  const cond   = String(a.CctvCondition || a.Condition || a.Status || '').toLowerCase();
   const status = cond.includes('active')   ? 'active'
                : cond.includes('inactive') ? 'inactive'
                : cond.includes('offline')  ? 'inactive' : 'unknown';
@@ -87,7 +105,7 @@ function normalizeArcGIS(feature) {
     id, name, lat, lng, district,
     roadway:     String(a.Route       || a.Roadway  || a.Highway || ''),
     direction:   String(a.Direction   || a.Dir      || ''),
-    description: String(a.LocationDescription || a.Description || name),
+    description: String(a.LocationDescription || a.Location || a.Description || name),
     county:      String(a.County      || ''),
     elevation:   a.Elevation != null ? a.Elevation : null,
     imageUrl: img, streamUrl: null, status,
@@ -113,9 +131,11 @@ function cwwp2Url(d, proxy) {
 async function detectWorkingProxy() {
   for (const proxy of PROXIES) {
     try {
-      const resp = await fetchWithTimeout(cwwp2Url(7, proxy), 8000, { cache: 'no-store' });
-      if (resp.ok) return proxy;
-    } catch(e) {}
+      // Use mode:'cors' so Chrome doesn't silently fail cross-origin requests
+      const opts = proxy ? { mode: 'cors' } : { mode: 'cors', cache: 'no-store' };
+      const resp = await fetchWithTimeout(cwwp2Url(7, proxy), 12000, opts);
+      if (resp.ok) { console.log('[CWWP2] working proxy:', proxy || 'direct'); return proxy; }
+    } catch(e) { console.log('[CWWP2] proxy failed:', proxy || 'direct', e.message); }
   }
   return null;
 }
@@ -497,16 +517,32 @@ function loadCameraImage(cam) {
   overlay.classList.add('hidden');
   img.style.opacity = '0';
 
-  const src = `${cam.imageUrl}?t=${Date.now()}`;
-
+  const src = cam.imageUrl + '?t=' + Date.now();
   const tmp = new Image();
-  tmp.onload = () => {
+  let done = false;
+
+  // 12-second hard timeout — never leave the spinner spinning
+  const timer = setTimeout(function() {
+    if (done) return;
+    done = true;
+    tmp.src = '';
+    loading.classList.add('hidden');
+    showImageError();
+  }, 12000);
+
+  tmp.onload = function() {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
     img.src = src;
     img.style.opacity = '1';
     loading.classList.add('hidden');
     document.getElementById('camTimestamp').textContent = new Date().toLocaleTimeString();
   };
-  tmp.onerror = () => {
+  tmp.onerror = function() {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
     loading.classList.add('hidden');
     showImageError();
   };
