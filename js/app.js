@@ -399,13 +399,7 @@ function renderMarkers() {
 
     const marker = L.marker([cam.lat, cam.lng], { icon });
     marker.camData = cam;
-    marker.on('click', () => {
-      if (isMobile()) {
-        marker.openPopup();
-      } else {
-        openCamera(cam, marker);
-      }
-    });
+    marker.on('click', () => openCamera(cam, marker));
 
     const popup = L.popup({ maxWidth: 220, className: 'cam-popup', closeButton: false, offset: [0, -6] })
       .setContent(() => buildPopupHtml(cam));
