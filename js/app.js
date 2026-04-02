@@ -228,7 +228,28 @@ const darkTiles = L.tileLayer(
     r: window.devicePixelRatio > 1 ? '@2x' : ''
   }
 );
+const satTiles = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, USGS, NOAA | Data: <a href="https://cwwp2.dot.ca.gov">Caltrans</a>',
+    maxZoom: 19,
+  }
+);
+let satelliteEnabled = false;
 darkTiles.addTo(map);
+
+function toggleSatellite() {
+  satelliteEnabled = !satelliteEnabled;
+  const btn = document.getElementById('satelliteBtn');
+  btn.classList.toggle('active', satelliteEnabled);
+  if (satelliteEnabled) {
+    map.removeLayer(darkTiles);
+    satTiles.addTo(map);
+  } else {
+    map.removeLayer(satTiles);
+    darkTiles.addTo(map);
+  }
+}
 
 // Marker cluster group
 markerCluster = L.markerClusterGroup({
@@ -378,7 +399,13 @@ function renderMarkers() {
 
     const marker = L.marker([cam.lat, cam.lng], { icon });
     marker.camData = cam;
-    marker.on('click', () => openCamera(cam, marker));
+    marker.on('click', () => {
+      if (isMobile()) {
+        marker.openPopup();
+      } else {
+        openCamera(cam, marker);
+      }
+    });
 
     const popup = L.popup({ maxWidth: 220, className: 'cam-popup', closeButton: false, offset: [0, -6] })
       .setContent(() => buildPopupHtml(cam));
@@ -862,6 +889,9 @@ document.addEventListener('DOMContentLoaded', () => {
       applyFilter();
     });
   });
+
+  // Satellite toggle
+  document.getElementById('satelliteBtn').addEventListener('click', toggleSatellite);
 
   // Locate / refresh
   document.getElementById('locateBtn').addEventListener('click', locateUser);
