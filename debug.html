@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Debug</title>
 <style>
-  body{margin:0;padding:12px;font:13px/1.6 monospace;background:#0f172a;color:#e2e8f0}
+  body{margin:0;padding:12px;font:12px/1.6 monospace;background:#0f172a;color:#e2e8f0}
   h2{color:#60a5fa;margin:0 0 12px}
   .row{padding:8px 10px;margin:6px 0;border-radius:6px;background:#1e293b;word-break:break-all}
   .ok{border-left:3px solid #22c55e}
   .fail{border-left:3px solid #ef4444}
   .wait{border-left:3px solid #f59e0b}
   .label{color:#94a3b8;font-size:11px;margin-bottom:2px}
-  .val{color:#f1f5f9}
+  .val{color:#f1f5f9;white-space:pre-wrap}
   button{margin:4px 4px 12px 0;padding:8px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;font:13px monospace;cursor:pointer}
 </style>
 </head>
@@ -23,58 +23,124 @@
 <div id="out"></div>
 <script>
 var out = document.getElementById('out');
+var PROXY = 'https://corsproxy.io/?';
+var BASE   = 'https://cwwp2.dot.ca.gov';
 
-function log(label, status, value) {
-  var div = document.createElement('div');
-  div.className = 'row ' + status;
-  div.innerHTML = '<div class="label">' + label + '</div><div class="val">' + escHtml(value) + '</div>';
-  out.appendChild(div);
+function row(label, status, value) {
+  var d = document.createElement('div');
+  d.className = 'row ' + status;
+  d.innerHTML = '<div class="label">' + esc(label) + '</div><div class="val">' + esc(value) + '</div>';
+  out.appendChild(d);
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function pending(label) {
+  var d = document.createElement('div');
+  d.className = 'row wait';
+  d.innerHTML = '<div class="label">Testing…</div><div class="val">' + esc(label) + '</div>';
+  out.appendChild(d);
+  return d;
 }
 
-function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-function mark(label){ var d=document.createElement('div'); d.className='row wait'; d.innerHTML='<div class="label">Testing…</div><div class="val">'+escHtml(label)+'</div>'; out.appendChild(d); return d; }
-
-async function test(label, url, opts) {
-  var el = mark(label);
-  var t = Date.now();
-  try {
-    // 10s timeout per test so one hanging request can't block the rest
-    var ctrl = new AbortController();
-    var timer = setTimeout(function(){ ctrl.abort(); }, 10000);
-    var r = await fetch(url, Object.assign({}, opts || {}, { signal: ctrl.signal }));
-    clearTimeout(timer);
-    var text = await r.text();
-    var elapsed = Date.now() - t;
-    // Show first camera object in full so we can see field names
-    var preview = text.slice(0, 800);
-    el.className = 'row ' + (r.ok ? 'ok' : 'fail');
-    el.innerHTML = '<div class="label">' + escHtml(label) + '</div>'
-      + '<div class="val">HTTP ' + r.status + ' · ' + elapsed + 'ms · ' + text.length + ' bytes<br>'
-      + escHtml(preview) + (text.length > 800 ? '…' : '') + '</div>';
-  } catch(e) {
-    var elapsed2 = Date.now() - t;
-    el.className = 'row fail';
-    el.innerHTML = '<div class="label">' + escHtml(label) + '</div>'
-      + '<div class="val">FAILED (' + elapsed2 + 'ms): ' + escHtml(e.message) + '</div>';
-  }
+function timed(url, ms) {
+  var ctrl = new AbortController();
+  var t = setTimeout(function(){ ctrl.abort(); }, ms || 10000);
+  return fetch(url, { mode: 'cors', signal: ctrl.signal })
+    .then(function(r){ clearTimeout(t); return r; },
+          function(e){ clearTimeout(t); throw e; });
 }
 
 async function runAll() {
   out.innerHTML = '';
-  log('Browser', 'ok', navigator.userAgent);
+  row('Browser', 'ok', navigator.userAgent);
 
-  var cwwp2 = 'https://cwwp2.dot.ca.gov/data/d7/cctv/cctvStatusD07.json';
-  var arcgis = 'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=json&resultRecordCount=2&resultOffset=0';
-  var proxy1 = 'https://corsproxy.io/?' + encodeURIComponent(cwwp2);
-  var proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(cwwp2);
+  // ── Test 1: can we reach corsproxy.io at all? ──
+  var el = pending('corsproxy.io reachable?');
+  try {
+    var r = await timed(PROXY + encodeURIComponent('https://httpbin.org/get'), 8000);
+    el.className = 'row ' + (r.ok ? 'ok' : 'fail');
+    el.querySelector('.label').textContent = 'corsproxy.io reachable';
+    el.querySelector('.val').textContent   = 'HTTP ' + r.status;
+  } catch(e) {
+    el.className = 'row fail';
+    el.querySelector('.label').textContent = 'corsproxy.io reachable';
+    el.querySelector('.val').textContent   = 'FAILED: ' + e.message;
+  }
 
-  await test('CWWP2 direct (no proxy)', cwwp2, {mode:'cors'});
-  await test('ArcGIS FeatureServer', arcgis, {mode:'cors'});
-  await test('corsproxy.io → CWWP2', proxy1, {mode:'cors'});
-  await test('allorigins.win → CWWP2', proxy2, {mode:'cors'});
+  // ── Test 2: fetch D7 JSON and show first full camera object ──
+  var url7 = PROXY + encodeURIComponent(BASE + '/data/d7/cctv/cctvStatusD07.json');
+  var el2 = pending('Fetch D7 + parse first camera');
+  try {
+    var r2 = await timed(url7, 12000);
+    if (!r2.ok) throw new Error('HTTP ' + r2.status);
+    var json = await r2.json();
 
-  log('Done', 'ok', 'All tests complete');
+    // Determine structure
+    var rawList = null;
+    if (Array.isArray(json.data)) {
+      rawList = json.data;
+    } else if (json.data && json.data.d7) {
+      rawList = json.data.d7.cctv || [];
+    } else if (Array.isArray(json.cctv)) {
+      rawList = json.cctv;
+    }
+
+    var topKeys = 'Top-level keys: ' + Object.keys(json).join(', ') + '\n';
+    var listInfo = rawList ? 'data is array, length=' + rawList.length : 'data is NOT array, type=' + typeof json.data;
+
+    if (rawList && rawList.length > 0) {
+      var first = rawList[0];
+      // Pretty print the entire first item
+      var pretty = JSON.stringify(first, null, 2);
+      el2.className = 'row ok';
+      el2.querySelector('.label').textContent = 'D7 JSON — first camera object';
+      el2.querySelector('.val').textContent   = topKeys + listInfo + '\n\n' + pretty;
+    } else {
+      el2.className = 'row fail';
+      el2.querySelector('.label').textContent = 'D7 JSON — no cameras found';
+      el2.querySelector('.val').textContent   = topKeys + listInfo + '\n\nRaw start: ' + JSON.stringify(json).slice(0, 400);
+    }
+  } catch(e) {
+    el2.className = 'row fail';
+    el2.querySelector('.label').textContent = 'D7 fetch failed';
+    el2.querySelector('.val').textContent   = e.message;
+  }
+
+  // ── Test 3: count how many cameras have valid lat/lng ──
+  var el3 = pending('Count parseable cameras in D7');
+  try {
+    var r3 = await timed(url7, 12000);
+    var j3 = await r3.json();
+    var list = Array.isArray(j3.data) ? j3.data
+             : (j3.data && j3.data.d7 && j3.data.d7.cctv) ? j3.data.d7.cctv
+             : [];
+    var withLatLng = 0, withImg = 0, sample = null;
+    list.forEach(function(raw) {
+      var c = (raw.cctv && raw.cctv.cctv) ? raw.cctv.cctv : raw.cctv || raw;
+      var loc = c.location || {};
+      var lat = parseFloat(loc.latitude || loc.lat || 0);
+      var lng = parseFloat(loc.longitude || loc.lng || 0);
+      if (lat && lng) {
+        withLatLng++;
+        var imgStatic = (c.imageData && c.imageData.static) || c.imageData || {};
+        var img = imgStatic.currentImageURL || imgStatic.imageURL || '';
+        if (img) withImg++;
+        if (!sample) sample = { id: c.cctvID || c.id, lat: lat, lng: lng, img: img };
+      }
+    });
+    el3.className = withLatLng > 0 ? 'row ok' : 'row fail';
+    el3.querySelector('.label').textContent = 'Parseable cameras in D7';
+    el3.querySelector('.val').textContent   = 'Total items: ' + list.length
+      + '\nWith lat/lng: ' + withLatLng
+      + '\nWith image URL: ' + withImg
+      + (sample ? '\nSample: ' + JSON.stringify(sample) : '');
+  } catch(e) {
+    el3.className = 'row fail';
+    el3.querySelector('.label').textContent = 'Parse test failed';
+    el3.querySelector('.val').textContent   = e.message;
+  }
+
+  row('Done', 'ok', 'All tests complete');
 }
 
 runAll();
