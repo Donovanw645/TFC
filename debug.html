@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Debug</title>
+<style>
+  body{margin:0;padding:12px;font:13px/1.6 monospace;background:#0f172a;color:#e2e8f0}
+  h2{color:#60a5fa;margin:0 0 12px}
+  .row{padding:8px 10px;margin:6px 0;border-radius:6px;background:#1e293b;word-break:break-all}
+  .ok{border-left:3px solid #22c55e}
+  .fail{border-left:3px solid #ef4444}
+  .wait{border-left:3px solid #f59e0b}
+  .label{color:#94a3b8;font-size:11px;margin-bottom:2px}
+  .val{color:#f1f5f9}
+  button{margin:4px 4px 12px 0;padding:8px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;font:13px monospace;cursor:pointer}
+</style>
+</head>
+<body>
+<h2>CA Cams — Debug</h2>
+<button onclick="runAll()">Run Tests</button>
+<button onclick="document.getElementById('out').innerHTML=''">Clear</button>
+<div id="out"></div>
+<script>
+var out = document.getElementById('out');
+
+function log(label, status, value) {
+  var div = document.createElement('div');
+  div.className = 'row ' + status;
+  div.innerHTML = '<div class="label">' + label + '</div><div class="val">' + escHtml(value) + '</div>';
+  out.appendChild(div);
+}
+
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function mark(label){ var d=document.createElement('div'); d.className='row wait'; d.innerHTML='<div class="label">Testing…</div><div class="val">'+escHtml(label)+'</div>'; out.appendChild(d); return d; }
+
+async function test(label, url, opts) {
+  var el = mark(label);
+  var t = Date.now();
+  try {
+    var r = await fetch(url, opts || {});
+    var text = await r.text();
+    var elapsed = Date.now() - t;
+    var preview = text.slice(0, 200);
+    el.className = 'row ' + (r.ok ? 'ok' : 'fail');
+    el.innerHTML = '<div class="label">' + escHtml(label) + '</div>'
+      + '<div class="val">HTTP ' + r.status + ' · ' + elapsed + 'ms · ' + text.length + ' bytes<br>'
+      + escHtml(preview) + (text.length > 200 ? '…' : '') + '</div>';
+  } catch(e) {
+    el.className = 'row fail';
+    el.innerHTML = '<div class="label">' + escHtml(label) + '</div><div class="val">ERROR: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function runAll() {
+  out.innerHTML = '';
+  log('Browser', 'ok', navigator.userAgent);
+
+  var cwwp2 = 'https://cwwp2.dot.ca.gov/data/d7/cctv/cctvStatusD07.json';
+  var arcgis = 'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=json&resultRecordCount=2&resultOffset=0';
+  var proxy1 = 'https://corsproxy.io/?' + encodeURIComponent(cwwp2);
+  var proxy2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(cwwp2);
+
+  await test('CWWP2 direct (no proxy)', cwwp2, {mode:'cors'});
+  await test('ArcGIS FeatureServer', arcgis, {mode:'cors'});
+  await test('corsproxy.io → CWWP2', proxy1, {mode:'cors'});
+  await test('allorigins.win → CWWP2', proxy2, {mode:'cors'});
+
+  log('Done', 'ok', 'All tests complete');
+}
+
+runAll();
+</script>
+</body>
+</html>
