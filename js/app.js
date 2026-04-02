@@ -207,7 +207,6 @@ let imageRefreshTimer = null;
 let sidebarOpen   = false;
 let markers       = new Map();
 let markerCluster = null;
-let clusterEnabled = false;   // off by default — show all dots
 let hlsInstance   = null;     // active HLS.js instance
 let activeFeed    = 'still';  // 'still' | 'live'
 
@@ -361,13 +360,9 @@ function applyFilter() {
 }
 
 // ── Markers ────────────────────────────────
-let unclustered = null; // L.LayerGroup for non-clustered mode
 
 function renderMarkers() {
-  // Clear both layers
   markerCluster.clearLayers();
-  if (unclustered) { map.removeLayer(unclustered); }
-  unclustered = L.layerGroup();
   markers.clear();
 
   filtered.forEach(cam => {
@@ -392,20 +387,10 @@ function renderMarkers() {
     marker.on('mouseout',  () => { if (!isMobile()) marker.closePopup(); });
 
     markers.set(cam.id, marker);
-    if (clusterEnabled) markerCluster.addLayer(marker);
-    else unclustered.addLayer(marker);
+    markerCluster.addLayer(marker);
   });
 
-  if (clusterEnabled) map.addLayer(markerCluster);
-  else map.addLayer(unclustered);
-}
-
-function toggleCluster() {
-  clusterEnabled = !clusterEnabled;
-  const btn = document.getElementById('clusterBtn');
-  btn.classList.toggle('btn-active', clusterEnabled);
-  btn.querySelector('span').textContent = clusterEnabled ? 'Uncluster' : 'Cluster';
-  renderMarkers();
+  map.addLayer(markerCluster);
 }
 
 function buildPopupHtml(cam) {
@@ -890,7 +875,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('nearMeBtn').addEventListener('click', handleNearMe);
 
   // Cluster toggle
-  document.getElementById('clusterBtn').addEventListener('click', toggleCluster);
 
   // Feed tabs
   document.getElementById('tabStill').addEventListener('click', () => switchFeed('still'));
