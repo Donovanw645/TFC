@@ -284,8 +284,8 @@ function normalizeCamera(raw, district) {
   var id      = c.cctvID || c.id || (idMatch ? idMatch[1] : '') || String(c.index || '');
 
   var name = c.cctvName || loc.locationName || loc.nearbyPlace || ('Camera ' + id);
-  var lat  = parseFloat(loc.latitude  || loc.lat || 0);
-  var lng  = parseFloat(loc.longitude || loc.lng || loc.lon || 0);
+  var lat  = parseFloat(loc.latitude  || loc.lat || c.latitude  || 0);
+  var lng  = parseFloat(loc.longitude || loc.lng || loc.lon || c.longitude || 0);
   // Some districts store longitude as a positive value (degrees west); force western hemisphere
   if (lng > 0) lng = -lng;
 
@@ -393,8 +393,8 @@ function renderMarkers() {
     const icon = L.divIcon({
       html: `<div class="cam-dot ${colorClass}" data-id="${cam.id}"></div>`,
       className: 'cam-marker-icon',
-      iconSize: [12, 12],
-      iconAnchor: [6, 6],
+      iconSize: [10, 10],
+      iconAnchor: [5, 5],
     });
 
     const marker = L.marker([cam.lat, cam.lng], { icon });

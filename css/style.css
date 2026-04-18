@@ -375,7 +375,9 @@ svg { flex-shrink: 0; }
 
 /* ── Camera Marker ── */
 .cam-marker-icon {
-  position: relative;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
 }
 .cam-dot {
   width: 10px; height: 10px;
