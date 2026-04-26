@@ -354,6 +354,36 @@ async function loadAllCameras() {
   showToast('Loaded ' + allCameras.length.toLocaleString() + ' cameras in ' + elapsed + 's', 'success', 3000);
 }
 
+async function refreshStatuses() {
+  const proxy = await detectWorkingProxy();
+  if (proxy === null) return;
+  let fresh;
+  try { fresh = await fetchFromCWWP2(proxy); } catch(e) { return; }
+  if (!fresh.length) return;
+
+  const freshMap = new Map(fresh.map(c => [c.id, c]));
+  let changed = 0;
+
+  allCameras.forEach(cam => {
+    const update = freshMap.get(cam.id);
+    if (!update || update.status === cam.status) return;
+    cam.status = update.status;
+    changed++;
+
+    const marker = markers.get(cam.id);
+    const dot = marker && marker.getElement() && marker.getElement().querySelector('.cam-dot');
+    if (dot) {
+      dot.classList.remove('green', 'yellow', 'red');
+      dot.classList.add(cam.status === 'active' ? 'green' : cam.status === 'inactive' ? 'red' : 'yellow');
+    }
+  });
+
+  if (changed > 0) renderList();
+}
+
+// Re-check camera statuses once per day
+setInterval(refreshStatuses, 24 * 60 * 60 * 1000);
+
 // ── Filter & Render ─────────────────────────
 function applyFilter() {
   const q = searchQuery.toLowerCase().trim();
