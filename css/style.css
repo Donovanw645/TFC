@@ -876,3 +876,96 @@ svg { flex-shrink: 0; }
     max-width: 320px;
   }
 }
+
+/* ── Login Gate ── */
+#loginGate {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #0d1017;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+#loginBox {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+#loginIcon {
+  width: 36px; height: 36px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+#loginTitle {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: .1px;
+  margin: 0;
+}
+
+#loginSub {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+}
+
+#loginForm {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#loginInput {
+  width: 100%;
+  height: 38px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 14px;
+  padding: 0 12px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color var(--transition);
+}
+#loginInput:focus { border-color: var(--accent); }
+
+#loginBtn {
+  width: 100%;
+  height: 38px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+#loginBtn:hover:not(:disabled) { background: var(--accent-h); }
+#loginBtn:disabled { opacity: .5; cursor: default; }
+
+#loginError {
+  font-size: 12px;
+  color: var(--red);
+  min-height: 16px;
+  text-align: center;
+}
+
+@keyframes loginShake {
+  0%,100% { transform: translateX(0); }
+  20%,60%  { transform: translateX(-6px); }
+  40%,80%  { transform: translateX(6px); }
+}
+.login-shake { animation: loginShake .4s ease; }

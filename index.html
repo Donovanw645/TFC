@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <meta name="theme-color" content="#0f172a">
-  <meta name="description" content="Live California traffic cameras from Caltrans — map-based viewer with your location">
+  <!-- Prevent indexing — don't expose the app to search engines -->
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="California traffic camera viewer">
   <title>CA Traffic Cams</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
@@ -210,6 +212,76 @@
 
 <!-- ── Backdrop (mobile) ── -->
 <div class="backdrop hidden" id="backdrop"></div>
+
+<!--
+  ── Login gate ──────────────────────────────────────────────────────────────
+  NOTE: This is CLIENT-SIDE only. GitHub Pages has no server — a determined
+  user who opens DevTools can bypass this. It deters casual visitors but is
+  not a substitute for backend authentication.
+  Password hash: SHA-256("soldering1Kit")
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<div id="loginGate" aria-modal="true" role="dialog" aria-label="Authentication required">
+  <div id="loginBox">
+    <svg id="loginIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14M3 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/>
+    </svg>
+    <h1 id="loginTitle">CA Traffic Cams</h1>
+    <p id="loginSub">Enter password to continue</p>
+    <form id="loginForm" autocomplete="on">
+      <input id="loginInput" type="password" placeholder="Password"
+             autocomplete="current-password" spellcheck="false">
+      <button id="loginBtn" type="submit">Unlock</button>
+    </form>
+    <p id="loginError" aria-live="polite"></p>
+  </div>
+</div>
+
+<script>
+// ── Auth gate (client-side only — see comment above) ──────────────────────
+(function () {
+  var HASH = '81040da0f7deac50ef52f36cd0d93c41a7a9aa8a8b2cb18b44d908a068642962';
+  var gate  = document.getElementById('loginGate');
+  var form  = document.getElementById('loginForm');
+  var input = document.getElementById('loginInput');
+  var err   = document.getElementById('loginError');
+  var btn   = document.getElementById('loginBtn');
+
+  function unlock() { gate.style.display = 'none'; }
+
+  // Already authenticated this session?
+  if (sessionStorage.getItem('tfc_auth') === HASH) { unlock(); return; }
+
+  gate.style.display = 'flex';
+
+  async function sha256(str) {
+    var buf = await crypto.subtle.digest('SHA-256',
+      new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf))
+      .map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    btn.disabled = true;
+    var hash = await sha256(input.value);
+    if (hash === HASH) {
+      sessionStorage.setItem('tfc_auth', HASH);
+      unlock();
+    } else {
+      err.textContent = 'Incorrect password.';
+      input.value = '';
+      input.classList.add('login-shake');
+      setTimeout(function () { input.classList.remove('login-shake'); }, 500);
+      btn.disabled = false;
+      input.focus();
+    }
+  });
+
+  // Focus input after gate is shown
+  setTimeout(function () { input.focus(); }, 50);
+}());
+</script>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
