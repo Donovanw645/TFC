@@ -387,9 +387,11 @@ svg { flex-shrink: 0; }
   cursor: pointer;
   transition: transform .15s;
 }
-.cam-dot.green  { background: var(--green); }
-.cam-dot.yellow { background: var(--yellow); }
-.cam-dot.red    { background: var(--red); }
+/* Dot color = camera capability type */
+.cam-dot.dot-still   { background: #4a7fc1; }           /* still image only — blue */
+.cam-dot.dot-video   { background: #c97b1c; }           /* stream only — amber */
+.cam-dot.dot-both    { background: #2e9e5b; }           /* still + live stream — green */
+.cam-dot.dot-unknown { background: var(--text-dim); }   /* no feed info — gray */
 .cam-dot.active-selected { transform: scale(1.7); z-index: 9999 !important; }
 
 /* ── Map Popup ── */
@@ -450,6 +452,36 @@ svg { flex-shrink: 0; }
   z-index: 500;
   display: flex;
   gap: 8px;
+}
+
+/* ── Dot legend ── */
+.map-legend {
+  position: absolute;
+  bottom: 24px;
+  right: 12px;
+  z-index: 500;
+  background: var(--bg-alt);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow);
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+.legend-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.4);
+  flex-shrink: 0;
 }
 .map-btn {
   display: flex;

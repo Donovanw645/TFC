@@ -298,6 +298,14 @@ function normalizeCamera(raw, district) {
              : (svc === 'false' || svc.includes('inactive')) ? 'inactive'
              : 'unknown';
 
+  // Camera capability type based on available feeds
+  var hasStill  = !!img;
+  var hasStream = !!streamUrl;
+  var type = (hasStill && hasStream) ? 'both'
+           : hasStream               ? 'video'
+           : hasStill                ? 'still'
+           : 'unknown';
+
   var distNum = parseInt(loc.district || district || 0) || district;
 
   return {
@@ -311,6 +319,7 @@ function normalizeCamera(raw, district) {
     imageUrl:    img,
     streamUrl,
     status,
+    type,
     distName: DISTRICT_NAMES[distNum] || ('District ' + distNum),
     dist: null,
   };
@@ -370,12 +379,7 @@ async function refreshStatuses() {
     cam.status = update.status;
     changed++;
 
-    const marker = markers.get(cam.id);
-    const dot = marker && marker.getElement() && marker.getElement().querySelector('.cam-dot');
-    if (dot) {
-      dot.classList.remove('green', 'yellow', 'red');
-      dot.classList.add(cam.status === 'active' ? 'green' : cam.status === 'inactive' ? 'red' : 'yellow');
-    }
+    // Dot color represents camera type (not status), so no dot update needed
   });
 
   if (changed > 0) renderList();
@@ -417,8 +421,11 @@ function renderMarkers() {
   markers.clear();
 
   filtered.forEach(cam => {
-    const colorClass = cam.status === 'active' ? 'green'
-                     : cam.status === 'inactive' ? 'red' : 'yellow';
+    // Dot color encodes camera capability, not status
+    const colorClass = cam.type === 'both'  ? 'dot-both'
+                     : cam.type === 'video' ? 'dot-video'
+                     : cam.type === 'still' ? 'dot-still'
+                     : 'dot-unknown';
 
     const icon = L.divIcon({
       html: `<div class="cam-dot ${colorClass}" data-id="${cam.id}"></div>`,
@@ -429,7 +436,10 @@ function renderMarkers() {
 
     const marker = L.marker([cam.lat, cam.lng], { icon });
     marker.camData = cam;
-    marker.on('click', () => openCamera(cam, marker));
+    marker.on('click', () => {
+      if (isMobile()) marker.openPopup();
+      else openCamera(cam, marker);
+    });
 
     const popup = L.popup({ maxWidth: 220, className: 'cam-popup', closeButton: false, offset: [0, -6] })
       .setContent(() => buildPopupHtml(cam));
