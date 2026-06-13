@@ -365,6 +365,9 @@ async function loadAllCameras() {
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   showToast('Loaded ' + allCameras.length.toLocaleString() + ' cameras in ' + elapsed + 's', 'success', 3000);
+
+  // Immediately check first batch for temporarily unavailable feeds
+  checkUnavailableImages();
 }
 
 async function refreshStatuses() {
@@ -418,10 +421,10 @@ async function checkUnavailableImages() {
       try {
         const res = await fetchWithTimeout(
           currentProxy + encodeURIComponent(cam.imageUrl + '?t=' + Date.now()),
-          10000, { method: 'HEAD', mode: 'cors' }
+          10000, { mode: 'cors' }
         );
-        const size = parseInt(res.headers.get('content-length') || '0');
-        if (size === 0) return; // proxy didn't expose Content-Length — skip
+        const blob = await res.blob();
+        const size = blob.size;
         cam.imageChecked = true;
         if (size < 8000) {
           markCameraUnavailable(cam);
@@ -775,12 +778,11 @@ function loadCameraImage(cam) {
     document.getElementById('camTimestamp').textContent = new Date().toLocaleTimeString();
     // Lazy check: if we haven't verified this camera's image size yet, do it now
     if (!cam.imageChecked && currentProxy) {
-      fetchWithTimeout(currentProxy + encodeURIComponent(src), 8000, { method: 'HEAD', mode: 'cors' })
-        .then(function(res) {
-          var size = parseInt(res.headers.get('content-length') || '0');
-          if (size === 0) return;
+      fetchWithTimeout(currentProxy + encodeURIComponent(src), 10000, { mode: 'cors' })
+        .then(function(res) { return res.blob(); })
+        .then(function(blob) {
           cam.imageChecked = true;
-          if (size < 8000) markCameraUnavailable(cam);
+          if (blob.size < 8000) markCameraUnavailable(cam);
         })
         .catch(function() {});
     }
