@@ -219,6 +219,8 @@ const map = L.map('map', {
   attributionControl: true,
 });
 
+window._leafletMap = map; // exposed for post-gate invalidateSize call
+
 // Dark CartoDB tiles
 const darkTiles = L.tileLayer(
   'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -416,7 +418,7 @@ async function checkUnavailableImages() {
       try {
         const res = await fetchWithTimeout(
           currentProxy + encodeURIComponent(cam.imageUrl + '?t=' + Date.now()),
-          10000, { method: 'HEAD' }
+          10000, { method: 'HEAD', mode: 'cors' }
         );
         const size = parseInt(res.headers.get('content-length') || '0');
         if (size === 0) return; // proxy didn't expose Content-Length — skip
@@ -443,8 +445,16 @@ async function checkUnavailableImages() {
   }
 }
 
-// Re-check camera statuses and unavailable feeds once per day
-setInterval(refreshStatuses, 24 * 60 * 60 * 1000);
+// Re-check camera statuses and unavailable feeds on the 1st of each month at 3 AM
+(function scheduleMonthlyRefresh() {
+  var now  = new Date();
+  var next = new Date(now.getFullYear(), now.getMonth() + 1, 1, 3, 0, 0, 0);
+  var ms   = next - now;
+  setTimeout(function() {
+    refreshStatuses();
+    setInterval(refreshStatuses, 30 * 24 * 60 * 60 * 1000); // fallback monthly interval
+  }, ms);
+}());
 
 // ── Filter & Render ─────────────────────────
 function applyFilter() {
@@ -496,8 +506,8 @@ function renderMarkers() {
     const marker = L.marker([cam.lat, cam.lng], { icon });
     marker.camData = cam;
     marker.on('click', () => {
-      if (isMobile()) marker.openPopup();
-      else openCamera(cam, marker);
+      if (!isMobile()) openCamera(cam, marker);
+      // Mobile: bindPopup's built-in toggle opens/closes popup naturally
     });
 
     const popup = L.popup({ maxWidth: 220, className: 'cam-popup', closeButton: false, offset: [0, -6] })
@@ -765,7 +775,7 @@ function loadCameraImage(cam) {
     document.getElementById('camTimestamp').textContent = new Date().toLocaleTimeString();
     // Lazy check: if we haven't verified this camera's image size yet, do it now
     if (!cam.imageChecked && currentProxy) {
-      fetchWithTimeout(currentProxy + encodeURIComponent(src), 8000, { method: 'HEAD' })
+      fetchWithTimeout(currentProxy + encodeURIComponent(src), 8000, { method: 'HEAD', mode: 'cors' })
         .then(function(res) {
           var size = parseInt(res.headers.get('content-length') || '0');
           if (size === 0) return;

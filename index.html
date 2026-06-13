@@ -255,7 +255,13 @@
   var err   = document.getElementById('loginError');
   var btn   = document.getElementById('loginBtn');
 
-  function unlock() { gate.style.display = 'none'; }
+  function unlock() {
+    gate.style.display = 'none';
+    // Tell Leaflet to recalculate map size now that the overlay is gone
+    setTimeout(function() {
+      if (window._leafletMap) window._leafletMap.invalidateSize();
+    }, 50);
+  }
 
   // Already authenticated this session?
   if (sessionStorage.getItem('tfc_auth') === HASH) { unlock(); return; }
