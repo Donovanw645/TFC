@@ -366,8 +366,10 @@ async function loadAllCameras() {
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   showToast('Loaded ' + allCameras.length.toLocaleString() + ' cameras in ' + elapsed + 's', 'success', 3000);
 
-  // Immediately check first batch for temporarily unavailable feeds
-  checkUnavailableImages();
+  // Apply cached unavailable list instantly, then run full scan only if cache is stale/missing
+  if (!applyUnavailableCache()) {
+    checkUnavailableImages(); // first-ever load or cache expired → full background scan
+  }
 }
 
 async function refreshStatuses() {
@@ -390,8 +392,7 @@ async function refreshStatuses() {
   });
 
   if (changed > 0) renderList();
-  // Also check for newly-unavailable image feeds
-  checkUnavailableImages();
+  checkUnavailableImages(); // re-scan all cameras and refresh cache
 }
 
 function markCameraUnavailable(cam) {
@@ -405,15 +406,42 @@ function markCameraUnavailable(cam) {
   }
 }
 
-// HEAD-request each image URL via proxy; Caltrans "Temporarily Unavailable"
-// placeholders are typically < 8 KB while real camera frames are 20–150 KB.
+// ── Unavailable image detection ─────────────────────────────────────────────
+// Caltrans "Temporarily Unavailable" placeholder JPEGs are < 8 KB.
+// Real camera frames are 20–150 KB. Results are cached in localStorage for
+// ~31 days so the full scan only runs once per month (or on first ever load).
+
+const UNAVAIL_CACHE_KEY  = 'tfc_unavail_v1';
+const UNAVAIL_CACHE_DAYS = 31;
+
+function saveUnavailableCache() {
+  try {
+    localStorage.setItem(UNAVAIL_CACHE_KEY, JSON.stringify({
+      ts:  Date.now(),
+      ids: allCameras.filter(c => c.unavailable).map(c => c.id),
+    }));
+  } catch(e) {}
+}
+
+// Returns true if a fresh cache was applied (skip full scan), false if scan needed.
+function applyUnavailableCache() {
+  try {
+    const raw = localStorage.getItem(UNAVAIL_CACHE_KEY);
+    if (!raw) return false;
+    const { ts, ids } = JSON.parse(raw);
+    if ((Date.now() - ts) > UNAVAIL_CACHE_DAYS * 864e5) return false; // stale
+    const idSet = new Set(ids);
+    allCameras.forEach(cam => {
+      cam.imageChecked = true;
+      if (idSet.has(cam.id)) markCameraUnavailable(cam);
+    });
+    return true;
+  } catch(e) { return false; }
+}
+
 async function checkUnavailableImages() {
   if (!currentProxy) return;
-  // Prioritise cameras not yet checked; also re-check known-unavailable ones
-  // in case they've come back online (they'll be > 8 KB again).
-  const toCheck = allCameras
-    .filter(c => c.imageUrl && (!c.imageChecked || c.unavailable))
-    .slice(0, 50);
+  const toCheck = allCameras.filter(c => c.imageUrl);
 
   for (let i = 0; i < toCheck.length; i += 8) {
     const batch = toCheck.slice(i, i + 8);
@@ -423,13 +451,12 @@ async function checkUnavailableImages() {
           currentProxy + encodeURIComponent(cam.imageUrl + '?t=' + Date.now()),
           10000, { mode: 'cors' }
         );
-        const blob = await res.blob();
-        const size = blob.size;
+        const size = (await res.blob()).size;
         cam.imageChecked = true;
         if (size < 8000) {
           markCameraUnavailable(cam);
         } else if (cam.unavailable) {
-          // Camera came back online — clear unavailable flag and restore type color
+          // Camera came back online — restore type colour
           cam.unavailable = false;
           const marker = markers.get(cam.id);
           const dot = marker && marker.getElement() && marker.getElement().querySelector('.cam-dot');
@@ -442,10 +469,12 @@ async function checkUnavailableImages() {
             );
           }
         }
-      } catch(e) { /* network error — leave imageChecked alone, try next time */ }
+      } catch(e) {}
     }));
-    if (i + 8 < toCheck.length) await new Promise(r => setTimeout(r, 400));
+    if (i + 8 < toCheck.length) await new Promise(r => setTimeout(r, 200));
   }
+
+  saveUnavailableCache(); // persist results for next app open
 }
 
 // Re-check camera statuses and unavailable feeds on the 1st of each month at 3 AM
