@@ -209,6 +209,7 @@ let markers       = new Map();
 let markerCluster = null;
 let hlsInstance   = null;     // active HLS.js instance
 let activeFeed    = 'still';  // 'still' | 'live'
+let currentProxy  = null;     // cached working proxy for reuse
 
 // ── Map init ───────────────────────────────
 const map = L.map('map', {
@@ -332,6 +333,7 @@ async function loadAllCameras() {
   let cameras = [];
 
   const proxy = await detectWorkingProxy();
+  currentProxy = proxy;
   if (proxy !== null) {
     try {
       cameras = await fetchFromCWWP2(proxy);
@@ -383,9 +385,65 @@ async function refreshStatuses() {
   });
 
   if (changed > 0) renderList();
+  // Also check for newly-unavailable image feeds
+  checkUnavailableImages();
 }
 
-// Re-check camera statuses once per day
+function markCameraUnavailable(cam) {
+  if (cam.unavailable) return;
+  cam.unavailable = true;
+  const marker = markers.get(cam.id);
+  const dot = marker && marker.getElement() && marker.getElement().querySelector('.cam-dot');
+  if (dot) {
+    dot.classList.remove('dot-still', 'dot-video', 'dot-both', 'dot-unknown');
+    dot.classList.add('dot-unavailable');
+  }
+}
+
+// HEAD-request each image URL via proxy; Caltrans "Temporarily Unavailable"
+// placeholders are typically < 8 KB while real camera frames are 20–150 KB.
+async function checkUnavailableImages() {
+  if (!currentProxy) return;
+  // Prioritise cameras not yet checked; also re-check known-unavailable ones
+  // in case they've come back online (they'll be > 8 KB again).
+  const toCheck = allCameras
+    .filter(c => c.imageUrl && (!c.imageChecked || c.unavailable))
+    .slice(0, 50);
+
+  for (let i = 0; i < toCheck.length; i += 8) {
+    const batch = toCheck.slice(i, i + 8);
+    await Promise.all(batch.map(async cam => {
+      try {
+        const res = await fetchWithTimeout(
+          currentProxy + encodeURIComponent(cam.imageUrl + '?t=' + Date.now()),
+          10000, { method: 'HEAD' }
+        );
+        const size = parseInt(res.headers.get('content-length') || '0');
+        if (size === 0) return; // proxy didn't expose Content-Length — skip
+        cam.imageChecked = true;
+        if (size < 8000) {
+          markCameraUnavailable(cam);
+        } else if (cam.unavailable) {
+          // Camera came back online — clear unavailable flag and restore type color
+          cam.unavailable = false;
+          const marker = markers.get(cam.id);
+          const dot = marker && marker.getElement() && marker.getElement().querySelector('.cam-dot');
+          if (dot) {
+            dot.classList.remove('dot-unavailable');
+            dot.classList.add(
+              cam.type === 'both'  ? 'dot-both'  :
+              cam.type === 'video' ? 'dot-video' :
+              cam.type === 'still' ? 'dot-still' : 'dot-unknown'
+            );
+          }
+        }
+      } catch(e) { /* network error — leave imageChecked alone, try next time */ }
+    }));
+    if (i + 8 < toCheck.length) await new Promise(r => setTimeout(r, 400));
+  }
+}
+
+// Re-check camera statuses and unavailable feeds once per day
 setInterval(refreshStatuses, 24 * 60 * 60 * 1000);
 
 // ── Filter & Render ─────────────────────────
@@ -421,8 +479,9 @@ function renderMarkers() {
   markers.clear();
 
   filtered.forEach(cam => {
-    // Dot color encodes camera capability, not status
-    const colorClass = cam.type === 'both'  ? 'dot-both'
+    // Red overrides type color when image feed is confirmed unavailable
+    const colorClass = cam.unavailable     ? 'dot-unavailable'
+                     : cam.type === 'both'  ? 'dot-both'
                      : cam.type === 'video' ? 'dot-video'
                      : cam.type === 'still' ? 'dot-still'
                      : 'dot-unknown';
@@ -704,6 +763,17 @@ function loadCameraImage(cam) {
     img.style.opacity = '1';
     loading.classList.add('hidden');
     document.getElementById('camTimestamp').textContent = new Date().toLocaleTimeString();
+    // Lazy check: if we haven't verified this camera's image size yet, do it now
+    if (!cam.imageChecked && currentProxy) {
+      fetchWithTimeout(currentProxy + encodeURIComponent(src), 8000, { method: 'HEAD' })
+        .then(function(res) {
+          var size = parseInt(res.headers.get('content-length') || '0');
+          if (size === 0) return;
+          cam.imageChecked = true;
+          if (size < 8000) markCameraUnavailable(cam);
+        })
+        .catch(function() {});
+    }
   };
   tmp.onerror = function() {
     if (done) return;

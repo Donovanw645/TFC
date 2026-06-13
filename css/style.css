@@ -387,11 +387,12 @@ svg { flex-shrink: 0; }
   cursor: pointer;
   transition: transform .15s;
 }
-/* Dot color = camera capability type */
-.cam-dot.dot-still   { background: #4a7fc1; }           /* still image only — blue */
-.cam-dot.dot-video   { background: #c97b1c; }           /* stream only — amber */
-.cam-dot.dot-both    { background: #2e9e5b; }           /* still + live stream — green */
-.cam-dot.dot-unknown { background: var(--text-dim); }   /* no feed info — gray */
+/* Dot color = camera capability type (unavailable overrides all) */
+.cam-dot.dot-still       { background: #4a7fc1; }         /* still image only — blue */
+.cam-dot.dot-video       { background: #c97b1c; }         /* stream only — amber */
+.cam-dot.dot-both        { background: #2e9e5b; }         /* still + live stream — green */
+.cam-dot.dot-unknown     { background: var(--text-dim); } /* no feed info — gray */
+.cam-dot.dot-unavailable { background: #c0392b; }         /* confirmed unavailable — red */
 .cam-dot.active-selected { transform: scale(1.7); z-index: 9999 !important; }
 
 /* ── Map Popup ── */
