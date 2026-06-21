@@ -893,39 +893,61 @@ function stopAutoRefresh() {
 }
 
 // ── User Location ───────────────────────────
-let userMarker = null;
+let userMarker  = null;
+let userWatchId = null;
 
 function locateUser() {
   const btn = document.getElementById('locateBtn');
-  btn.classList.add('spinning');
 
-  if (!navigator.geolocation) {
-    showToast('Geolocation not supported by your browser', 'error');
-    btn.classList.remove('spinning');
+  // Second click — stop tracking
+  if (userWatchId !== null) {
+    navigator.geolocation.clearWatch(userWatchId);
+    userWatchId = null;
+    btn.classList.remove('active', 'spinning');
+    if (userMarker) { userMarker.remove(); userMarker = null; }
+    userLatLng = null;
+    updateUserDistances();
+    applyFilter();
+    showToast('Location tracking stopped', '', 2000);
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(
+  if (!navigator.geolocation) {
+    showToast('Geolocation not supported by your browser', 'error');
+    return;
+  }
+
+  btn.classList.add('spinning');
+  let firstFix = true;
+
+  userWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude: lat, longitude: lng } = pos.coords;
       userLatLng = { lat, lng };
-      btn.classList.remove('spinning');
-      btn.classList.add('active');
 
       placeUserMarker(lat, lng);
       updateUserDistances();
-      applyFilter(); // resort by distance
-      map.setView([lat, lng], 12, { animate: true, duration: 1 });
-      showToast('Location found — cameras sorted by distance', 'success', 3000);
+
+      if (firstFix) {
+        firstFix = false;
+        btn.classList.remove('spinning');
+        btn.classList.add('active');
+        map.setView([lat, lng], 12, { animate: true, duration: 1 });
+        showToast('Location tracking active — cameras sorted by distance', 'success', 3000);
+        applyFilter(); // full render + resort on first fix
+      } else {
+        renderList(); // silent resort on subsequent updates — don't re-render map
+      }
     },
     err => {
       btn.classList.remove('spinning');
+      userWatchId = null;
       const msg = err.code === 1 ? 'Location permission denied'
                 : err.code === 2 ? 'Position unavailable'
                 : 'Location request timed out';
       showToast(msg, 'error', 4000);
     },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
   );
 }
 
