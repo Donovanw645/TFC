@@ -154,15 +154,27 @@ function cwwp2Url(d, proxy) {
 }
 
 async function detectWorkingProxy() {
-  for (const proxy of PROXIES) {
-    try {
-      // Use mode:'cors' so Chrome doesn't silently fail cross-origin requests
-      const opts = proxy ? { mode: 'cors' } : { mode: 'cors', cache: 'no-store' };
-      const resp = await fetchWithTimeout(cwwp2Url(7, proxy), 12000, opts);
-      if (resp.ok) { console.log('[CWWP2] working proxy:', proxy || 'direct'); return proxy; }
-    } catch(e) { console.log('[CWWP2] proxy failed:', proxy || 'direct', e.message); }
+  // Re-use the proxy that worked last time this session — no re-test needed
+  const cached = sessionStorage.getItem('tfc_proxy');
+  if (cached !== null) return cached === '__direct__' ? '' : cached;
+
+  // Race all proxies simultaneously — first to succeed wins (~1-2s vs up to 36s sequential)
+  try {
+    const winner = await Promise.any(
+      PROXIES.map(async proxy => {
+        const opts = proxy ? { mode: 'cors' } : { mode: 'cors', cache: 'no-store' };
+        const resp = await fetchWithTimeout(cwwp2Url(7, proxy), 5000, opts);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return proxy;
+      })
+    );
+    console.log('[CWWP2] working proxy:', winner || 'direct');
+    sessionStorage.setItem('tfc_proxy', winner || '__direct__');
+    return winner;
+  } catch(e) {
+    console.log('[CWWP2] all proxies failed');
+    return null;
   }
-  return null;
 }
 
 async function fetchFromCWWP2(proxy) {
@@ -328,12 +340,13 @@ function normalizeCamera(raw, district) {
   };
 }
 
-// ── Load all cameras (CWWP2 via proxy) ─────
+// ── Load all cameras ────────────────────────
 async function loadAllCameras() {
   showLoading(true, 'Loading cameras…');
   const startTime = Date.now();
   let cameras = [];
 
+  // Try CWWP2 first (richer: stream URLs, district info, inService status)
   const proxy = await detectWorkingProxy();
   currentProxy = proxy;
   if (proxy !== null) {
@@ -342,6 +355,17 @@ async function loadAllCameras() {
       console.log('[CWWP2] loaded', cameras.length, 'cameras via "' + (proxy || 'direct') + '"');
     } catch(e) {
       console.warn('[CWWP2] failed:', e.message);
+    }
+  }
+
+  // ArcGIS fallback — no CORS proxy required, Caltrans allows direct cross-origin
+  if (!cameras.length) {
+    showLoading(true, 'Trying backup source…');
+    try {
+      cameras = await fetchFromArcGIS();
+      console.log('[ArcGIS] loaded', cameras.length, 'cameras');
+    } catch(e) {
+      console.warn('[ArcGIS] failed:', e.message);
     }
   }
 
@@ -1041,6 +1065,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('refreshBtn').addEventListener('click', () => {
     const btn = document.getElementById('refreshBtn');
     btn.classList.add('spinning');
+    sessionStorage.removeItem('tfc_proxy'); // force re-detect in case proxy went down
     loadAllCameras().finally(() => btn.classList.remove('spinning'));
   });
 
