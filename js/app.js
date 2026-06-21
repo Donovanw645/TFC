@@ -375,6 +375,7 @@ async function loadAllCameras() {
 async function refreshStatuses() {
   const proxy = await detectWorkingProxy();
   if (proxy === null) return;
+  currentProxy = proxy; // keep cached proxy fresh for the unavailable scan below
   let fresh;
   try { fresh = await fetchFromCWWP2(proxy); } catch(e) { return; }
   if (!fresh.length) return;
@@ -1045,8 +1046,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Near Me
   document.getElementById('nearMeBtn').addEventListener('click', handleNearMe);
-
-  // Cluster toggle
 
   // Feed tabs
   document.getElementById('tabStill').addEventListener('click', () => switchFeed('still'));
