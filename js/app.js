@@ -567,7 +567,7 @@ function renderMarkers() {
       // Mobile: bindPopup's built-in toggle opens/closes popup naturally
     });
 
-    const popup = L.popup({ maxWidth: 220, className: 'cam-popup', closeButton: false, offset: [0, -6] })
+    const popup = L.popup({ maxWidth: 220, className: 'cam-popup', closeButton: false, offset: [0, -6], autoPan: false })
       .setContent(() => buildPopupHtml(cam));
     marker.bindPopup(popup);
     marker.on('mouseover', () => { if (!isMobile()) marker.openPopup(); });
