@@ -484,8 +484,20 @@ function tvOnDrivePos(p) {
     if (d < best) { best = d; curI = i; }
   }
   const curAlong = tvRouteCum[curI];
-  let nextIdx = tvRouteCams.findIndex(rc => rc.along > curAlong + 80);
-  if (nextIdx < 0) nextIdx = tvRouteCams.length - 1;
+
+  let nextIdx;
+  if (localStorage.getItem('tfc_st_behind') === '1') {
+    // Behind Mode: show the most recently passed camera (what's now behind you)
+    nextIdx = -1;
+    for (let i = tvRouteCams.length - 1; i >= 0; i--) {
+      if (tvRouteCams[i].along <= curAlong) { nextIdx = i; break; }
+    }
+    if (nextIdx < 0) nextIdx = 0; // haven't passed any camera yet — show first
+  } else {
+    // Forward Mode: stay on a camera until 100 yards (91m) past it, then advance
+    nextIdx = tvRouteCams.findIndex(rc => rc.along > curAlong - 91);
+    if (nextIdx < 0) nextIdx = tvRouteCams.length - 1;
+  }
 
   if (nextIdx !== tvDriveIndex) {
     tvDriveIndex = nextIdx;
@@ -497,9 +509,16 @@ function tvOnDrivePos(p) {
 function tvUpdateAhead(curAlong) {
   const rc = tvRouteCams[tvDriveIndex];
   if (!rc) return;
-  const ahead = rc.along - curAlong;
-  document.getElementById('driveAhead').textContent =
-    ahead > 30 ? tvMiles(ahead) + ' ahead' : 'Here now';
+  const delta = rc.along - curAlong; // positive = camera is ahead, negative = camera is behind
+  let label;
+  if (Math.abs(delta) <= 30) {
+    label = 'Here now';
+  } else if (delta < 0) {
+    label = tvMiles(Math.abs(delta)) + ' behind';
+  } else {
+    label = tvMiles(delta) + ' ahead';
+  }
+  document.getElementById('driveAhead').textContent = label;
 }
 
 function tvShowDriveCam(idx) {

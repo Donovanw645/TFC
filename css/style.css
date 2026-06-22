@@ -1784,6 +1784,50 @@ body.mode-travel .travel-panel { display: flex; }
   flex-shrink: 0;
 }
 
+/* Toggle switch */
+.settings-sw {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.settings-sw input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.settings-sw-track {
+  display: block;
+  width: 36px;
+  height: 20px;
+  background: var(--bg);
+  border: 1px solid var(--border-md);
+  border-radius: 10px;
+  position: relative;
+  transition: background .18s, border-color .18s;
+}
+.settings-sw-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform .18s, background .18s;
+}
+.settings-sw input:checked + .settings-sw-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.settings-sw input:checked + .settings-sw-track::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+
 /* Action rows */
 .settings-action-row {
   display: flex;

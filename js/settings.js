@@ -11,6 +11,7 @@
 
 const ST_FEED_KEY     = 'tfc_st_feed';
 const ST_CORRIDOR_KEY = 'tfc_st_corridor';
+const ST_BEHIND_KEY   = 'tfc_st_behind';
 
 // ── Open / Close ──────────────────────────────────────────────────────────
 function stOpenPanel() {
@@ -42,6 +43,9 @@ function stPopulatePanel() {
   const corridor = localStorage.getItem(ST_CORRIDOR_KEY) || '1600';
   const sel = document.getElementById('stCorridorSel');
   if (sel) sel.value = corridor;
+
+  const behind = document.getElementById('stBehindToggle');
+  if (behind) behind.checked = localStorage.getItem(ST_BEHIND_KEY) === '1';
 }
 
 function stCapKey(key) {
@@ -195,6 +199,14 @@ function stReadCorridorPref() { return parseInt(localStorage.getItem(ST_CORRIDOR
       const val = parseInt(corridorSel.value, 10);
       localStorage.setItem(ST_CORRIDOR_KEY, corridorSel.value);
       ROUTE_CORRIDOR_M = val;
+    });
+  }
+
+  // Behind Mode toggle
+  const behindToggle = document.getElementById('stBehindToggle');
+  if (behindToggle) {
+    behindToggle.addEventListener('change', () => {
+      localStorage.setItem(ST_BEHIND_KEY, behindToggle.checked ? '1' : '0');
     });
   }
 
