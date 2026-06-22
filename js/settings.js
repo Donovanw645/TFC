@@ -50,6 +50,12 @@ function stPopulatePanel() {
 
   const voice = document.getElementById('stVoiceToggle');
   if (voice) voice.checked = localStorage.getItem(ST_VOICE_KEY) === '1';
+
+  // Show API key row only when voice is enabled; mask saved key
+  const apiRow = document.getElementById('stApiKeyRow');
+  if (apiRow) apiRow.classList.toggle('hidden', localStorage.getItem(ST_VOICE_KEY) !== '1');
+  const apiInput = document.getElementById('stApiKeyInput');
+  if (apiInput) apiInput.value = localStorage.getItem('tfc_vc_apikey') ? '••••••••••••••••' : '';
 }
 
 function stCapKey(key) {
@@ -210,10 +216,34 @@ function stReadCorridorPref() { return parseInt(localStorage.getItem(ST_CORRIDOR
 
   // Voice Commands toggle
   const voiceToggle = document.getElementById('stVoiceToggle');
+  const apiKeyRow   = document.getElementById('stApiKeyRow');
   if (voiceToggle) {
     voiceToggle.addEventListener('change', () => {
       localStorage.setItem(ST_VOICE_KEY, voiceToggle.checked ? '1' : '0');
+      if (apiKeyRow) apiKeyRow.classList.toggle('hidden', !voiceToggle.checked);
       if (typeof vcUpdateBtn === 'function') vcUpdateBtn();
+    });
+  }
+
+  // API key save / clear
+  const apiInput = document.getElementById('stApiKeyInput');
+  document.getElementById('stApiKeySave')?.addEventListener('click', () => {
+    if (!apiInput) return;
+    const val = apiInput.value.trim();
+    if (!val || val.startsWith('•')) { showToast('Paste your API key first', '', 2500); return; }
+    localStorage.setItem('tfc_vc_apikey', val);
+    apiInput.value = '••••••••••••••••';
+    showToast('API key saved', '', 2000);
+  });
+  document.getElementById('stApiKeyClear')?.addEventListener('click', () => {
+    localStorage.removeItem('tfc_vc_apikey');
+    if (apiInput) apiInput.value = '';
+    showToast('API key removed', '', 2000);
+  });
+  // Clear the masked placeholder when user focuses the field to type a real key
+  if (apiInput) {
+    apiInput.addEventListener('focus', () => {
+      if (apiInput.value.startsWith('•')) apiInput.value = '';
     });
   }
 

@@ -1,6 +1,9 @@
 /* ═══════════════════════════════════════════
    CA Traffic Cams — Voice Commands
-   Tap-to-talk for driving mode.
+   Three-layer intent parser:
+   1. Strict regex  (instant, no key needed)
+   2. Keyword-bag   (handles natural variations)
+   3. Claude API    (handles anything — optional key in settings)
 
    Globals from app.js:    allCameras, showToast
    Globals from travel.js: tvRouteCams, tvDriveIndex, tvDriveNav,
@@ -9,18 +12,24 @@
 
 'use strict';
 
-const VC_KEY = 'tfc_vc_enabled';
+const VC_KEY     = 'tfc_vc_enabled';
+const VC_API_KEY = 'tfc_vc_apikey';
 
 let vcRecog             = null;
 let vcActive            = false;
 let vcFeedbackTimer     = null;
 let vcCurrentTranscript = '';
 
-// ── Number words ───────────────────────────────────────────────────────────
-const VC_NUMS = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10 };
-function vcParseNum(s) {
+// ── Number helpers ─────────────────────────────────────────────────────────
+const VC_NUMS = {
+  one:1, two:2, three:3, four:4, five:5,
+  six:6, seven:7, eight:8, nine:9, ten:10,
+  eleven:11, twelve:12, fifteen:15, twenty:20
+};
+function vcParseNum(s, defaultVal) {
+  if (s === undefined || s === null) return defaultVal !== undefined ? defaultVal : 1;
   const n = parseInt(s, 10);
-  return isNaN(n) ? (VC_NUMS[s.toLowerCase()] || 1) : n;
+  return isNaN(n) ? (VC_NUMS[String(s).toLowerCase()] || (defaultVal !== undefined ? defaultVal : 1)) : n;
 }
 
 // ── Road / name normalization ──────────────────────────────────────────────
@@ -37,11 +46,6 @@ function vcNorm(s) {
     .trim();
 }
 
-const VC_STOP = new Set([
-  'the','on','at','near','for','in','along','a','an','and',
-  'me','show','camera','cameras','please','find'
-]);
-
 // ── Feedback box ───────────────────────────────────────────────────────────
 function vcShowFeedback(heard, action, persist) {
   clearTimeout(vcFeedbackTimer);
@@ -52,9 +56,7 @@ function vcShowFeedback(heard, action, persist) {
   if (heardEl)  heardEl.textContent  = heard  ? '"' + heard + '"' : '';
   if (actionEl) actionEl.textContent = action || '';
   box.classList.remove('hidden');
-  if (!persist) {
-    vcFeedbackTimer = setTimeout(() => box.classList.add('hidden'), 5000);
-  }
+  if (!persist) vcFeedbackTimer = setTimeout(() => box.classList.add('hidden'), 5000);
 }
 
 function vcHideFeedback() {
@@ -63,8 +65,162 @@ function vcHideFeedback() {
   if (box) box.classList.add('hidden');
 }
 
-// ── Camera search ──────────────────────────────────────────────────────────
-function vcSearch(cams, rawQuery) {
+// ── Intent execution (shared by all three parsing layers) ──────────────────
+function vcExecuteIntent(intent, raw) {
+  switch (intent.intent) {
+    case 'nav': {
+      const delta = Math.round(intent.delta || 0);
+      const n     = Math.abs(delta);
+      vcShowFeedback(raw, delta >= 0
+        ? 'Jumping ' + n + ' camera' + (n !== 1 ? 's' : '') + ' ahead'
+        : 'Going back ' + n + ' camera' + (n !== 1 ? 's' : ''));
+      tvDriveNav(delta);
+      break;
+    }
+    case 'stream':
+      if (typeof tvFeedMode !== 'undefined' && tvFeedMode !== 'stream')
+        document.getElementById('driveFeedToggle')?.click();
+      vcShowFeedback(raw, 'Switched to Stream mode');
+      break;
+    case 'view':
+      if (typeof tvFeedMode !== 'undefined' && tvFeedMode !== 'view')
+        document.getElementById('driveFeedToggle')?.click();
+      vcShowFeedback(raw, 'Switched to View mode');
+      break;
+    case 'search':
+      vcFindCamera(intent.query || raw, raw);
+      break;
+    default:
+      vcShowFeedback(raw, 'Not understood — try "3 cameras ahead" or "camera on Herndon and Hwy 99"');
+  }
+}
+
+// ── Layer 1: Strict regex ──────────────────────────────────────────────────
+function vcRegexParse(t) {
+  let m;
+
+  m = t.match(/\b(\w+)\s+cameras?\s+(ahead|forward)/);
+  if (m) return { intent: 'nav', delta: vcParseNum(m[1]) };
+
+  m = t.match(/\b(\w+)\s+cameras?\s+(back|behind)/);
+  if (m) return { intent: 'nav', delta: -vcParseNum(m[1]) };
+
+  if (/\bnext\s+camera\b/.test(t) || /\bgo\s+forward\b/.test(t))
+    return { intent: 'nav', delta: 1 };
+  if (/\b(previous|prev)\s+camera\b/.test(t) || /\bgo\s+back\b/.test(t))
+    return { intent: 'nav', delta: -1 };
+
+  if (/\b(stream|live)\s*(mode)?\b/.test(t)) return { intent: 'stream' };
+  if (/\b(view|still)\s*(mode)?\b/.test(t))  return { intent: 'view' };
+
+  m = t.match(/camera\s+(?:on|at|near|along|for|in)?\s*(.{3,})/);
+  if (m) return { intent: 'search', query: m[1].trim() };
+
+  m = t.match(/show\s+(?:me\s+)?(?:the\s+)?(.{3,})/);
+  if (m) {
+    const q = m[1].replace(/^camera\s+(?:on|at|near|in)?\s*/, '').trim();
+    return { intent: 'search', query: q };
+  }
+
+  return null;
+}
+
+// ── Layer 2: Keyword-bag fuzzy matching ────────────────────────────────────
+// Handles natural variations the regex won't catch:
+// "jump ahead ten", "advance 3", "skip five", "bring up stream", etc.
+const VC_FWD  = new Set(['ahead','forward','next','advance','skip','further','more','forth','up','proceed','after']);
+const VC_BWD  = new Set(['back','behind','previous','prev','before','last','prior','earlier','rewind','reverse','return']);
+const VC_STRM = new Set(['stream','live','video','streaming','broadcast','feed']);
+const VC_VIEW = new Set(['view','still','image','photo','picture','snapshot','static','stop','pause']);
+const VC_SRCH = new Set(['camera','find','where','at','on','near','junction','intersection','road','street','avenue','highway','route']);
+
+function vcKeywordParse(t) {
+  const words = t.split(/\W+/).filter(Boolean);
+
+  let num     = null;
+  let hasFwd  = false, hasBwd = false;
+  let hasStrm = false, hasView = false;
+  let hasSrch = false;
+
+  for (const w of words) {
+    // Numbers
+    const ni = parseInt(w, 10);
+    if (!isNaN(ni) && ni > 0)           num = ni;
+    else if (VC_NUMS[w] !== undefined)  num = VC_NUMS[w];
+
+    if (VC_FWD.has(w))  hasFwd  = true;
+    if (VC_BWD.has(w))  hasBwd  = true;
+    if (VC_STRM.has(w)) hasStrm = true;
+    if (VC_VIEW.has(w)) hasView = true;
+    if (VC_SRCH.has(w)) hasSrch = true;
+  }
+
+  // Feed mode (no directional context)
+  if (hasStrm && !hasFwd && !hasBwd) return { intent: 'stream' };
+  if (hasView  && !hasFwd && !hasBwd) return { intent: 'view' };
+
+  // Navigation — need at least one directional word, OR a number without backward signal
+  if (hasFwd && !hasBwd)  return { intent: 'nav', delta:  num !== null ? num : 1 };
+  if (hasBwd && !hasFwd)  return { intent: 'nav', delta: -(num !== null ? num : 1) };
+  if (num !== null && !hasBwd && !hasStrm && !hasView)
+    return { intent: 'nav', delta: num }; // bare number = go forward that many
+
+  // Search fallback — sentence has location-type words but no nav intent
+  if (hasSrch && num === null && !hasFwd && !hasBwd && !hasStrm && !hasView)
+    return { intent: 'search', query: t };
+
+  return null;
+}
+
+// ── Layer 3: Claude API (optional) ────────────────────────────────────────
+async function vcParseWithAI(raw, apiKey) {
+  const totalCams = (tvRouteCams && tvRouteCams.length) || 0;
+  const curIdx    = (typeof tvDriveIndex !== 'undefined' ? tvDriveIndex : 0) + 1;
+  const feedMode  = typeof tvFeedMode !== 'undefined' ? tvFeedMode : 'view';
+
+  const systemPrompt =
+    'You are a voice command parser for a traffic camera driving assistant. ' +
+    'Extract the user\'s intent and return ONLY a JSON object — no explanation, no markdown. ' +
+    'Current state: ' + totalCams + ' cameras on route, currently showing camera #' + curIdx + ', feed mode is "' + feedMode + '". ' +
+    'JSON formats:\n' +
+    '{"intent":"nav","delta":N}   N>0 = cameras ahead, N<0 = cameras back\n' +
+    '{"intent":"stream"}          switch to live stream feed\n' +
+    '{"intent":"view"}            switch to still image feed\n' +
+    '{"intent":"search","query":"road name or location"}\n' +
+    '{"intent":"unknown"}';
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 60,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: raw }]
+      })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = (data.content?.[0]?.text || '').trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    return JSON.parse(jsonMatch[0]);
+  } catch (_) { return null; }
+}
+
+// ── Camera search (used by all intent layers) ──────────────────────────────
+const VC_STOP = new Set([
+  'the','on','at','near','for','in','along','a','an','and',
+  'me','show','camera','cameras','please','find'
+]);
+
+function vcSearchCams(cams, rawQuery) {
   const words = vcNorm(rawQuery).split(' ').filter(w => w.length > 1 && !VC_STOP.has(w));
   if (!words.length) return null;
   let best = null, bestScore = 0;
@@ -77,98 +233,38 @@ function vcSearch(cams, rawQuery) {
   return bestScore > 0 ? best : null;
 }
 
-function vcFindCamera(query) {
-  const raw = vcCurrentTranscript;
-
-  // Search route cameras first — jump to it directly if found
+function vcFindCamera(query, raw) {
   if (tvRouteCams && tvRouteCams.length) {
-    const hit = vcSearch(tvRouteCams.map(rc => rc.cam), query);
+    const hit = vcSearchCams(tvRouteCams.map(rc => rc.cam), query);
     if (hit) {
       const idx = tvRouteCams.findIndex(rc => rc.cam === hit);
-      if (idx >= 0) {
-        tvDriveIndex = idx;
-        tvShowDriveCam(idx);
-        vcShowFeedback(raw, 'Showing: ' + hit.name);
-        return;
-      }
+      if (idx >= 0) { tvDriveIndex = idx; tvShowDriveCam(idx); vcShowFeedback(raw, 'Showing: ' + hit.name); return; }
     }
   }
-
-  // Not on route — stay in drive mode, show message
-  const hit = vcSearch(allCameras, query);
-  if (hit) {
-    vcShowFeedback(raw, '"' + hit.name + '" is not on your current route');
-    return;
-  }
-
+  const hit = vcSearchCams(allCameras, query);
+  if (hit) { vcShowFeedback(raw, '"' + hit.name + '" is not on your current route'); return; }
   vcShowFeedback(raw, 'No camera found for "' + query + '"');
 }
 
-// ── Command parser ─────────────────────────────────────────────────────────
-function vcHandle(raw) {
+// ── Main handler (async — may call AI) ────────────────────────────────────
+async function vcHandle(raw) {
   vcCurrentTranscript = raw;
   const t = raw.toLowerCase().trim();
 
-  // N cameras ahead / forward
-  let m = t.match(/\b(\w+)\s+cameras?\s+(ahead|forward)/);
-  if (m) {
-    const n = vcParseNum(m[1]);
-    vcShowFeedback(raw, 'Jumping ' + n + ' camera' + (n !== 1 ? 's' : '') + ' ahead');
-    tvDriveNav(n);
-    return;
-  }
+  // Layer 1 — fast regex
+  const r1 = vcRegexParse(t);
+  if (r1) { vcExecuteIntent(r1, raw); return; }
 
-  // N cameras back / behind
-  m = t.match(/\b(\w+)\s+cameras?\s+(back|behind)/);
-  if (m) {
-    const n = vcParseNum(m[1]);
-    vcShowFeedback(raw, 'Going back ' + n + ' camera' + (n !== 1 ? 's' : ''));
-    tvDriveNav(-n);
-    return;
-  }
+  // Layer 2 — keyword-bag fuzzy
+  const r2 = vcKeywordParse(t);
+  if (r2) { vcExecuteIntent(r2, raw); return; }
 
-  // "next camera" / "go forward"
-  if (/\bnext\s+camera\b/.test(t) || /\bgo\s+forward\b/.test(t)) {
-    vcShowFeedback(raw, 'Next camera');
-    tvDriveNav(1);
-    return;
-  }
-
-  // "previous camera" / "go back"
-  if (/\b(previous|prev)\s+camera\b/.test(t) || /\bgo\s+back\b/.test(t)) {
-    vcShowFeedback(raw, 'Previous camera');
-    tvDriveNav(-1);
-    return;
-  }
-
-  // Feed mode: stream / live
-  if (/\b(stream|live)\s*(mode)?\b/.test(t)) {
-    if (typeof tvFeedMode !== 'undefined' && tvFeedMode !== 'stream') {
-      document.getElementById('driveFeedToggle')?.click();
-    }
-    vcShowFeedback(raw, 'Switched to Stream mode');
-    return;
-  }
-
-  // Feed mode: view / still
-  if (/\b(view|still)\s*(mode)?\b/.test(t)) {
-    if (typeof tvFeedMode !== 'undefined' && tvFeedMode !== 'view') {
-      document.getElementById('driveFeedToggle')?.click();
-    }
-    vcShowFeedback(raw, 'Switched to View mode');
-    return;
-  }
-
-  // "camera on/at/near ..."
-  m = t.match(/camera\s+(?:on|at|near|along|for|in)?\s*(.{3,})/);
-  if (m) { vcFindCamera(m[1].trim()); return; }
-
-  // "show me ..." — catch-all location search
-  m = t.match(/show\s+(?:me\s+)?(?:the\s+)?(.{3,})/);
-  if (m) {
-    const q = m[1].replace(/^camera\s+(?:on|at|near|in)?\s*/, '').trim();
-    vcFindCamera(q);
-    return;
+  // Layer 3 — Claude API (if key present)
+  const apiKey = localStorage.getItem(VC_API_KEY);
+  if (apiKey) {
+    vcShowFeedback(raw, 'Thinking…', true);
+    const r3 = await vcParseWithAI(raw, apiKey);
+    if (r3 && r3.intent !== 'unknown') { vcExecuteIntent(r3, raw); return; }
   }
 
   vcShowFeedback(raw, 'Not understood — try "3 cameras ahead" or "camera on Herndon and Hwy 99"');
@@ -177,17 +273,10 @@ function vcHandle(raw) {
 // ── SpeechRecognition lifecycle ────────────────────────────────────────────
 function vcStartListening() {
   if (localStorage.getItem(VC_KEY) !== '1') {
-    showToast('Voice commands are off — enable in Settings', '', 3000);
-    return;
+    showToast('Voice commands are off — enable in Settings', '', 3000); return;
   }
-
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    showToast('Voice commands not supported in this browser', '', 3000);
-    return;
-  }
-
-  // Tap again while listening → cancel
+  if (!SR) { showToast('Voice commands not supported in this browser', '', 3000); return; }
   if (vcActive) { vcStop(); return; }
 
   vcRecog                = new SR();
@@ -198,26 +287,21 @@ function vcStartListening() {
   vcSetState('listening');
   vcActive = true;
 
-  vcRecog.onresult = e => {
+  vcRecog.onresult = async e => {
     vcActive = false;
     vcSetState('processing');
-    vcHandle(e.results[0][0].transcript);
-    setTimeout(() => vcSetState('idle'), 1500);
+    await vcHandle(e.results[0][0].transcript);
+    vcSetState('idle');
   };
 
   vcRecog.onerror = e => {
     vcActive = false;
     vcSetState('idle');
-    if (e.error === 'no-speech') {
-      vcHideFeedback();
-    } else if (e.error !== 'aborted') {
-      vcShowFeedback('', 'Mic error: ' + e.error);
-    }
+    if (e.error === 'no-speech') vcHideFeedback();
+    else if (e.error !== 'aborted') vcShowFeedback('', 'Mic error: ' + e.error);
   };
 
-  vcRecog.onend = () => {
-    if (vcActive) { vcActive = false; vcSetState('idle'); }
-  };
+  vcRecog.onend = () => { if (vcActive) { vcActive = false; vcSetState('idle'); } };
 
   vcRecog.start();
 }

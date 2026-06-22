@@ -1844,6 +1844,21 @@ body.mode-travel .travel-panel { display: flex; }
 .st-action-btn.danger { color: var(--red); border-color: rgba(192,57,43,.3); }
 .st-action-btn.danger:hover { background: rgba(192,57,43,.12); }
 
+/* API key sub-row */
+.settings-apikey-row {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.settings-apikey-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* About */
 .settings-about {
   padding: 16px 16px 0;

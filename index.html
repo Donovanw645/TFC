@@ -512,6 +512,25 @@
           <span class="settings-sw-track"></span>
         </label>
       </div>
+
+      <!-- API key sub-row — shown when voice is enabled -->
+      <div class="settings-apikey-row hidden" id="stApiKeyRow">
+        <div class="settings-apikey-label">
+          AI understanding
+          <span class="settings-toggle-desc">Anthropic API key lets you say anything naturally — stored on-device only</span>
+        </div>
+        <div class="settings-loc-row" style="margin:8px 0 0">
+          <div class="settings-loc-input-wrap">
+            <input type="password" class="settings-loc-input" id="stApiKeyInput" placeholder="sk-ant-… (optional)" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="settings-loc-actions">
+            <button class="st-save-btn" id="stApiKeySave">Save</button>
+            <button class="st-clear-btn" id="stApiKeyClear" title="Remove key">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Data -->
