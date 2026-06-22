@@ -69,12 +69,16 @@ function vcHideFeedback() {
 function vcExecuteIntent(intent, raw) {
   switch (intent.intent) {
     case 'nav': {
-      const delta = Math.round(intent.delta || 0);
-      const n     = Math.abs(delta);
-      vcShowFeedback(raw, delta >= 0
-        ? 'Jumping ' + n + ' camera' + (n !== 1 ? 's' : '') + ' ahead'
-        : 'Going back ' + n + ' camera' + (n !== 1 ? 's' : ''));
-      tvDriveNav(delta);
+      const delta   = Math.round(intent.delta || 0);
+      const fromIdx = tvDriveIndex;                                    // where we are now
+      const toIdx   = Math.max(0, Math.min(tvRouteCams.length - 1, fromIdx + delta));
+      const actual  = toIdx - fromIdx;                                 // real jump (may be < delta if clamped)
+      const n       = Math.abs(actual);
+      vcShowFeedback(raw,
+        'Camera ' + (fromIdx + 1) + ' → ' + (toIdx + 1) +
+        (actual >= 0 ? ' (↑' + n + ')' : ' (↓' + n + ')')
+      );
+      tvDriveNav(actual);
       break;
     }
     case 'stream':
