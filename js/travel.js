@@ -37,6 +37,63 @@ let tvAutoFollow = true;
 let tvFeedMode   = 'view';  // 'view' | 'stream'
 let tvDriveHls   = null;
 
+// ── Quick Routes ──────────────────────────────────────────────────────────
+const TV_QR_LABELS  = { home: 'Home', work: 'Work', ss: 'SS' };
+const TV_QR_PREFIX  = 'tfc_qr_v1_';
+
+function tvLoadQR(key) {
+  try { const r = localStorage.getItem(TV_QR_PREFIX + key); return r ? JSON.parse(r) : null; }
+  catch(e) { return null; }
+}
+function tvSaveQR(key, pt) {
+  try { localStorage.setItem(TV_QR_PREFIX + key, JSON.stringify(pt)); } catch(e) {}
+}
+
+function tvRenderQuickRoutes() {
+  Object.keys(TV_QR_LABELS).forEach(key => {
+    const pt   = tvLoadQR(key);
+    const btn  = document.getElementById('qr_' + key);
+    const addr = document.getElementById('qr_addr_' + key);
+    if (!btn || !addr) return;
+    if (pt) {
+      btn.classList.add('qr-set');
+      // Shorten to first meaningful segment for display
+      const display = (pt.display || pt.label || '').split(',')[0].trim();
+      addr.textContent = display || TV_QR_LABELS[key];
+      btn.title = pt.display || pt.label || '';
+    } else {
+      btn.classList.remove('qr-set');
+      addr.textContent = 'Not set — save a destination here';
+    }
+  });
+}
+
+function tvUseQuickRoute(key) {
+  const pt = tvLoadQR(key);
+  if (!pt) {
+    showToast('No address saved for ' + TV_QR_LABELS[key] + ' — plan a route and tap Save destination', '', 4000);
+    return;
+  }
+  document.getElementById('routeEnd').value = pt.display || pt.label;
+  tvEndPt = pt;
+  tvGetRoute();
+}
+
+function tvSaveAs(key) {
+  if (!tvEndPt) { showToast('Plan a route first', 'error'); return; }
+  const pt = { lat: tvEndPt.lat, lng: tvEndPt.lng, label: tvEndPt.label, display: tvEndPt.label };
+  tvSaveQR(key, pt);
+  tvRenderQuickRoutes();
+  // Flash the button saved state briefly
+  const btn = document.querySelector('.save-as-btn[data-key="' + key + '"]');
+  if (btn) {
+    btn.classList.add('saved');
+    btn.textContent = '✓ ' + TV_QR_LABELS[key];
+    setTimeout(() => { btn.classList.remove('saved'); btn.textContent = TV_QR_LABELS[key]; }, 2000);
+  }
+  showToast('Saved as ' + TV_QR_LABELS[key], 'success', 2000);
+}
+
 // ── Geometry helpers ──
 function tvMeters(lat1, lng1, lat2, lng2) {
   const R = 6371000, toR = d => d * Math.PI / 180;
@@ -236,6 +293,11 @@ async function tvGetRoute() {
 
     tvRenderRouteCamList();
     showToast('Route ready · ' + tvRouteCams.length + ' cameras along the way', 'success', 3000);
+    // Reset save-as button labels and reveal the row
+    document.querySelectorAll('.save-as-btn').forEach(b => {
+      b.classList.remove('saved');
+      b.textContent = TV_QR_LABELS[b.dataset.key] || b.dataset.key;
+    });
   } catch (e) {
     console.warn('[Travel] route failed:', e.message);
     showToast('Route failed — check the addresses and try again', 'error', 5000);
@@ -320,6 +382,7 @@ function tvStartDriving() {
 function tvStopDriving() {
   tvDriving = false;
   tvStopDriveStream();
+  tvSetStreamStatus('', '');
   document.getElementById('driveOverlay').classList.add('hidden');
   if (tvDriveWatch !== null) { navigator.geolocation.clearWatch(tvDriveWatch); tvDriveWatch = null; }
   if (tvDriveTimer) { clearInterval(tvDriveTimer); tvDriveTimer = null; }
@@ -337,6 +400,7 @@ function tvToggleFeedMode() {
   if (!isStream) {
     // Switched back to View — kill the video, still is already loaded
     tvStopDriveStream();
+    tvSetStreamStatus('', '');
   } else {
     // Switched to Stream — attempt HLS for the current cam (still stays visible as placeholder)
     const rc = tvRouteCams[tvDriveIndex];
@@ -344,31 +408,48 @@ function tvToggleFeedMode() {
   }
 }
 
+function tvSetStreamStatus(text, state) {
+  // state: '' | 'loading' | 'live' | 'error' | 'none'
+  const el = document.getElementById('driveStreamStatus');
+  if (!el) return;
+  if (!text) { el.classList.add('hidden'); return; }
+  el.textContent = text;
+  el.className = 'drive-stream-status drive-stream-' + (state || '');
+}
+
 function tvStopDriveStream() {
   if (tvDriveHls) { tvDriveHls.destroy(); tvDriveHls = null; }
   const video = document.getElementById('driveVideo');
   if (video) { video.pause(); video.src = ''; video.load(); video.classList.add('hidden'); }
-  // Restore the still image
+  // Restore the still image — it's always loaded behind the video
   const img = document.getElementById('driveImage');
   if (img) img.style.opacity = img.getAttribute('data-loaded') === '1' ? '1' : '0';
 }
 
 function tvAttemptDriveStream(cam) {
-  if (!cam.streamUrl) return; // no stream available — still stays visible
   const video = document.getElementById('driveVideo');
   const img   = document.getElementById('driveImage');
   if (!video) return;
 
   tvStopDriveStream(); // tear down any previous stream first
 
+  if (!cam.streamUrl) {
+    tvSetStreamStatus('Still only — no live stream for this camera', 'none');
+    return;
+  }
+
+  // Still image stays fully visible as placeholder while stream loads
+  if (img && img.getAttribute('data-loaded') === '1') img.style.opacity = '1';
+  tvSetStreamStatus('Connecting to live stream…', 'loading');
+
   function onStreamReady() {
-    // Stream is playing — slide video in over the still
     video.classList.remove('hidden');
-    if (img) img.style.opacity = '0';
+    if (img) img.style.opacity = '0'; // video is on top now
+    tvSetStreamStatus('● Live', 'live');
   }
   function onStreamFail() {
-    // Keep showing the still; video stays hidden
     tvStopDriveStream();
+    tvSetStreamStatus('Stream unavailable — showing still image', 'error');
   }
 
   if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -378,7 +459,7 @@ function tvAttemptDriveStream(cam) {
     video.addEventListener('canplay', onStreamReady, { once: true });
     video.addEventListener('error',   onStreamFail,  { once: true });
   } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-    tvDriveHls = new Hls({ enableWorker: false });
+    tvDriveHls = new Hls({ enableWorker: false, fragLoadingTimeOut: 8000, manifestLoadingTimeOut: 8000 });
     tvDriveHls.loadSource(cam.streamUrl);
     tvDriveHls.attachMedia(video);
     tvDriveHls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -388,6 +469,8 @@ function tvAttemptDriveStream(cam) {
     tvDriveHls.on(Hls.Events.ERROR, (_, data) => {
       if (data.fatal) onStreamFail();
     });
+  } else {
+    tvSetStreamStatus('Live streaming not supported in this browser', 'error');
   }
 }
 
@@ -437,8 +520,11 @@ function tvShowDriveCam(idx) {
 
   // Always load the still first (instant feedback / View Mode / stream fallback)
   tvLoadDriveImg(cam);
-  // Then attempt stream on top if in Stream Mode
-  if (tvFeedMode === 'stream') tvAttemptDriveStream(cam);
+  if (tvFeedMode === 'stream') {
+    tvAttemptDriveStream(cam);
+  } else {
+    tvSetStreamStatus('', ''); // clear any leftover badge in View Mode
+  }
 }
 
 function tvRefreshDriveImg() {
@@ -533,6 +619,17 @@ function tvCloseMobilePanel() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('modeBrowse').addEventListener('click', () => tvSetMode('browse'));
   document.getElementById('modeTravel').addEventListener('click', () => tvSetMode('travel'));
+
+  // Quick route buttons
+  document.querySelectorAll('.quick-route-btn').forEach(btn => {
+    btn.addEventListener('click', () => tvUseQuickRoute(btn.dataset.key));
+  });
+  // Save-as buttons
+  document.querySelectorAll('.save-as-btn').forEach(btn => {
+    btn.addEventListener('click', () => tvSaveAs(btn.dataset.key));
+  });
+  // Init quick route display
+  tvRenderQuickRoutes();
 
   document.getElementById('routeGoBtn').addEventListener('click', tvGetRoute);
   document.getElementById('routeClearBtn').addEventListener('click', tvClearRoute);

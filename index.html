@@ -123,6 +123,44 @@
   <!-- Travel Mode panel (route planner) -->
   <aside class="travel-panel" id="travelPanel">
     <div class="travel-scroll">
+
+      <!-- Quick Routes -->
+      <div class="travel-section">
+        <div class="travel-title">Quick Routes</div>
+        <div class="quick-routes-list">
+          <button class="quick-route-btn" id="qr_home" data-key="home">
+            <svg class="qr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            <div class="qr-text">
+              <span class="qr-label">Home</span>
+              <span class="qr-addr" id="qr_addr_home">Not set</span>
+            </div>
+            <svg class="qr-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+          <button class="quick-route-btn" id="qr_work" data-key="work">
+            <svg class="qr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+            </svg>
+            <div class="qr-text">
+              <span class="qr-label">Work</span>
+              <span class="qr-addr" id="qr_addr_work">Not set</span>
+            </div>
+            <svg class="qr-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+          <button class="quick-route-btn" id="qr_ss" data-key="ss">
+            <svg class="qr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+            </svg>
+            <div class="qr-text">
+              <span class="qr-label">SS</span>
+              <span class="qr-addr" id="qr_addr_ss">Not set</span>
+            </div>
+            <svg class="qr-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+
       <div class="travel-section">
         <div class="travel-title">Plan a Route</div>
         <div class="route-field">
@@ -155,6 +193,18 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M10 8l6 4-6 4V8z" fill="currentColor"/></svg>
           Start Driving Mode
         </button>
+        <!-- Save destination to a quick route slot -->
+        <div class="save-as-row" id="saveAsRow">
+          <span class="save-as-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save destination as:
+          </span>
+          <div class="save-as-btns">
+            <button class="save-as-btn" data-key="home">Home</button>
+            <button class="save-as-btn" data-key="work">Work</button>
+            <button class="save-as-btn" data-key="ss">SS</button>
+          </div>
+        </div>
         <button class="route-clear-btn" id="routeClearBtn">Clear Route</button>
       </div>
 
@@ -308,6 +358,8 @@
     <img id="driveImage" class="drive-image" alt="Road ahead">
     <video id="driveVideo" class="drive-image drive-video hidden" autoplay muted playsinline></video>
     <div class="drive-image-loading" id="driveImageLoading"><div class="spinner"></div></div>
+    <!-- Stream status badge — visible in Stream Mode -->
+    <div class="drive-stream-status hidden" id="driveStreamStatus"></div>
     <div class="drive-image-overlay hidden" id="driveImageOverlay">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="56" height="56" opacity=".5">
         <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14M3 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/>
