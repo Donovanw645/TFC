@@ -2,7 +2,7 @@
    CA Traffic Cams — Voice Commands
    Tap-to-talk for driving mode.
 
-   Globals from app.js:    allCameras, showToast, openCamera
+   Globals from app.js:    allCameras, showToast
    Globals from travel.js: tvRouteCams, tvDriveIndex, tvDriveNav,
                             tvShowDriveCam, tvFeedMode
 ════════════════════════════════════════════ */
@@ -11,8 +11,10 @@
 
 const VC_KEY = 'tfc_vc_enabled';
 
-let vcRecog  = null;
-let vcActive = false;
+let vcRecog             = null;
+let vcActive            = false;
+let vcFeedbackTimer     = null;
+let vcCurrentTranscript = '';
 
 // ── Number words ───────────────────────────────────────────────────────────
 const VC_NUMS = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10 };
@@ -24,19 +26,42 @@ function vcParseNum(s) {
 // ── Road / name normalization ──────────────────────────────────────────────
 function vcNorm(s) {
   return (s || '').toLowerCase()
-    .replace(/\bhighway\b/g,      'hwy')
-    .replace(/\bstate\s*route\b/g,'sr')
-    .replace(/\binterstate\b/g,   'i')
-    .replace(/\bavenue\b/g,       'ave')
-    .replace(/\bboulevard\b/g,    'blvd')
-    .replace(/\bstreet\b/g,       'st')
-    .replace(/[:\-\/|]+/g,        ' ')
-    .replace(/\s+/g,              ' ')
+    .replace(/\bhighway\b/g,       'hwy')
+    .replace(/\bstate\s*route\b/g, 'sr')
+    .replace(/\binterstate\b/g,    'i')
+    .replace(/\bavenue\b/g,        'ave')
+    .replace(/\bboulevard\b/g,     'blvd')
+    .replace(/\bstreet\b/g,        'st')
+    .replace(/[:\-\/|]+/g,         ' ')
+    .replace(/\s+/g,               ' ')
     .trim();
 }
 
-// Stop-words stripped before word-matching queries against camera names
-const VC_STOP = new Set(['the','on','at','near','for','in','along','a','an','and','me','show','camera','cameras','please','find']);
+const VC_STOP = new Set([
+  'the','on','at','near','for','in','along','a','an','and',
+  'me','show','camera','cameras','please','find'
+]);
+
+// ── Feedback box ───────────────────────────────────────────────────────────
+function vcShowFeedback(heard, action, persist) {
+  clearTimeout(vcFeedbackTimer);
+  const box      = document.getElementById('vcFeedback');
+  const heardEl  = document.getElementById('vcFeedbackHeard');
+  const actionEl = document.getElementById('vcFeedbackAction');
+  if (!box) return;
+  if (heardEl)  heardEl.textContent  = heard  ? '"' + heard + '"' : '';
+  if (actionEl) actionEl.textContent = action || '';
+  box.classList.remove('hidden');
+  if (!persist) {
+    vcFeedbackTimer = setTimeout(() => box.classList.add('hidden'), 5000);
+  }
+}
+
+function vcHideFeedback() {
+  clearTimeout(vcFeedbackTimer);
+  const box = document.getElementById('vcFeedback');
+  if (box) box.classList.add('hidden');
+}
 
 // ── Camera search ──────────────────────────────────────────────────────────
 function vcSearch(cams, rawQuery) {
@@ -53,6 +78,8 @@ function vcSearch(cams, rawQuery) {
 }
 
 function vcFindCamera(query) {
+  const raw = vcCurrentTranscript;
+
   // Search route cameras first — jump to it directly if found
   if (tvRouteCams && tvRouteCams.length) {
     const hit = vcSearch(tvRouteCams.map(rc => rc.cam), query);
@@ -61,57 +88,74 @@ function vcFindCamera(query) {
       if (idx >= 0) {
         tvDriveIndex = idx;
         tvShowDriveCam(idx);
+        vcShowFeedback(raw, 'Showing: ' + hit.name);
         return;
       }
     }
   }
-  // Fall back to all cameras — exit drive mode and open detail panel
+
+  // Not on route — stay in drive mode, show message
   const hit = vcSearch(allCameras, query);
   if (hit) {
-    showToast('Camera not on route — opening in browse mode', '', 3000);
-    setTimeout(() => {
-      document.getElementById('driveExitBtn').click();
-      setTimeout(() => openCamera(hit), 350);
-    }, 300);
+    vcShowFeedback(raw, '"' + hit.name + '" is not on your current route');
     return;
   }
-  showToast('No camera found for "' + query + '"', '', 3500);
+
+  vcShowFeedback(raw, 'No camera found for "' + query + '"');
 }
 
 // ── Command parser ─────────────────────────────────────────────────────────
 function vcHandle(raw) {
+  vcCurrentTranscript = raw;
   const t = raw.toLowerCase().trim();
-
-  // Show what was heard
-  showToast('"' + raw + '"', '', 2500);
 
   // N cameras ahead / forward
   let m = t.match(/\b(\w+)\s+cameras?\s+(ahead|forward)/);
-  if (m) { tvDriveNav(vcParseNum(m[1])); return; }
+  if (m) {
+    const n = vcParseNum(m[1]);
+    vcShowFeedback(raw, 'Jumping ' + n + ' camera' + (n !== 1 ? 's' : '') + ' ahead');
+    tvDriveNav(n);
+    return;
+  }
 
   // N cameras back / behind
   m = t.match(/\b(\w+)\s+cameras?\s+(back|behind)/);
-  if (m) { tvDriveNav(-vcParseNum(m[1])); return; }
+  if (m) {
+    const n = vcParseNum(m[1]);
+    vcShowFeedback(raw, 'Going back ' + n + ' camera' + (n !== 1 ? 's' : ''));
+    tvDriveNav(-n);
+    return;
+  }
 
   // "next camera" / "go forward"
-  if (/\bnext\s+camera\b/.test(t) || /\bgo\s+forward\b/.test(t)) { tvDriveNav(1); return; }
+  if (/\bnext\s+camera\b/.test(t) || /\bgo\s+forward\b/.test(t)) {
+    vcShowFeedback(raw, 'Next camera');
+    tvDriveNav(1);
+    return;
+  }
 
   // "previous camera" / "go back"
-  if (/\b(previous|prev)\s+camera\b/.test(t) || /\bgo\s+back\b/.test(t)) { tvDriveNav(-1); return; }
+  if (/\b(previous|prev)\s+camera\b/.test(t) || /\bgo\s+back\b/.test(t)) {
+    vcShowFeedback(raw, 'Previous camera');
+    tvDriveNav(-1);
+    return;
+  }
 
-  // Feed mode: "stream mode" / "live"
+  // Feed mode: stream / live
   if (/\b(stream|live)\s*(mode)?\b/.test(t)) {
     if (typeof tvFeedMode !== 'undefined' && tvFeedMode !== 'stream') {
       document.getElementById('driveFeedToggle')?.click();
     }
+    vcShowFeedback(raw, 'Switched to Stream mode');
     return;
   }
 
-  // Feed mode: "view mode" / "still"
+  // Feed mode: view / still
   if (/\b(view|still)\s*(mode)?\b/.test(t)) {
     if (typeof tvFeedMode !== 'undefined' && tvFeedMode !== 'view') {
       document.getElementById('driveFeedToggle')?.click();
     }
+    vcShowFeedback(raw, 'Switched to View mode');
     return;
   }
 
@@ -119,15 +163,15 @@ function vcHandle(raw) {
   m = t.match(/camera\s+(?:on|at|near|along|for|in)?\s*(.{3,})/);
   if (m) { vcFindCamera(m[1].trim()); return; }
 
-  // "show me ..." (catch-all — strip leading words then search)
+  // "show me ..." — catch-all location search
   m = t.match(/show\s+(?:me\s+)?(?:the\s+)?(.{3,})/);
   if (m) {
-    const q = m[1].replace(/^camera\s+(?:on|at|near|in|at)?\s*/, '').trim();
+    const q = m[1].replace(/^camera\s+(?:on|at|near|in)?\s*/, '').trim();
     vcFindCamera(q);
     return;
   }
 
-  showToast('Not understood — try "3 cameras ahead" or "camera on Herndon and Hwy 99"', '', 4500);
+  vcShowFeedback(raw, 'Not understood — try "3 cameras ahead" or "camera on Herndon and Hwy 99"');
 }
 
 // ── SpeechRecognition lifecycle ────────────────────────────────────────────
@@ -146,8 +190,8 @@ function vcStartListening() {
   // Tap again while listening → cancel
   if (vcActive) { vcStop(); return; }
 
-  vcRecog               = new SR();
-  vcRecog.lang          = 'en-US';
+  vcRecog                = new SR();
+  vcRecog.lang           = 'en-US';
   vcRecog.interimResults = false;
   vcRecog.maxAlternatives = 3;
 
@@ -157,17 +201,17 @@ function vcStartListening() {
   vcRecog.onresult = e => {
     vcActive = false;
     vcSetState('processing');
-    // Use the highest-confidence alternative
-    const transcript = e.results[0][0].transcript;
-    vcHandle(transcript);
+    vcHandle(e.results[0][0].transcript);
     setTimeout(() => vcSetState('idle'), 1500);
   };
 
   vcRecog.onerror = e => {
     vcActive = false;
     vcSetState('idle');
-    if (e.error !== 'no-speech' && e.error !== 'aborted') {
-      showToast('Mic error: ' + e.error, '', 3000);
+    if (e.error === 'no-speech') {
+      vcHideFeedback();
+    } else if (e.error !== 'aborted') {
+      vcShowFeedback('', 'Mic error: ' + e.error);
     }
   };
 
@@ -182,14 +226,15 @@ function vcStop() {
   if (vcRecog) { try { vcRecog.abort(); } catch (_) {} vcRecog = null; }
   vcActive = false;
   vcSetState('idle');
+  vcHideFeedback();
 }
 
 function vcSetState(state) {
   const btn = document.getElementById('vcBtn');
   if (btn) btn.dataset.state = state;
+  if (state === 'listening') vcShowFeedback('', 'Listening…', true);
 }
 
-// Called by settings.js when the toggle changes, and on init
 function vcUpdateBtn() {
   const btn = document.getElementById('vcBtn');
   if (btn) btn.classList.toggle('hidden', localStorage.getItem(VC_KEY) !== '1');

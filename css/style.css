@@ -1299,6 +1299,38 @@ body.mode-travel .travel-panel { display: flex; }
   opacity: .75;
 }
 
+/* ── Voice command feedback box ── */
+.vc-feedback {
+  position: absolute;
+  bottom: 80px;
+  left: 16px;
+  right: 16px;
+  z-index: 6;
+  background: rgba(13,16,23,.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  pointer-events: none;
+}
+.vc-feedback.hidden { display: none; }
+.vc-feedback-heard {
+  font-size: 11px;
+  color: rgba(255,255,255,.4);
+  font-style: italic;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vc-feedback-heard:empty { display: none; }
+.vc-feedback-action {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+
 .drive-image-wrap {
   flex: 1;
   position: relative;
