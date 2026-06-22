@@ -19,6 +19,8 @@ let vcRecog             = null;
 let vcActive            = false;
 let vcFeedbackTimer     = null;
 let vcCurrentTranscript = '';
+let vcAccum             = '';
+let vcSpeechDebounce    = null;
 
 // ── Number helpers ─────────────────────────────────────────────────────────
 const VC_NUMS = {
@@ -305,34 +307,57 @@ function vcStartListening() {
   if (!SR) { showToast('Voice commands not supported in this browser', '', 3000); return; }
   if (vcActive) { vcStop(); return; }
 
-  vcRecog                = new SR();
-  vcRecog.lang           = 'en-US';
-  vcRecog.interimResults = false;
+  vcRecog                 = new SR();
+  vcRecog.lang            = 'en-US';
+  vcRecog.continuous      = true;
+  vcRecog.interimResults  = false;
   vcRecog.maxAlternatives = 3;
 
+  vcAccum = '';
   vcSetState('listening');
   vcActive = true;
 
-  vcRecog.onresult = async e => {
-    vcActive = false;
-    vcSetState('processing');
-    await vcHandle(e.results[0][0].transcript);
-    vcSetState('idle');
+  vcRecog.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        vcAccum += (vcAccum ? ' ' : '') + e.results[i][0].transcript.trim();
+      }
+    }
+    clearTimeout(vcSpeechDebounce);
+    vcSpeechDebounce = setTimeout(async () => {
+      const text = vcAccum.trim();
+      vcAccum = '';
+      vcSpeechDebounce = null;
+      if (!text) { vcSetState('idle'); return; }
+      try { vcRecog.stop(); } catch (_) {}
+      vcActive = false;
+      vcSetState('processing');
+      await vcHandle(text);
+      vcSetState('idle');
+    }, 750);
   };
 
   vcRecog.onerror = e => {
+    clearTimeout(vcSpeechDebounce);
+    vcSpeechDebounce = null;
+    vcAccum  = '';
     vcActive = false;
     vcSetState('idle');
     if (e.error === 'no-speech') vcHideFeedback();
     else if (e.error !== 'aborted') vcShowFeedback('', 'Mic error: ' + e.error);
   };
 
-  vcRecog.onend = () => { if (vcActive) { vcActive = false; vcSetState('idle'); } };
+  vcRecog.onend = () => {
+    if (vcActive && !vcSpeechDebounce) { vcActive = false; vcSetState('idle'); }
+  };
 
   vcRecog.start();
 }
 
 function vcStop() {
+  clearTimeout(vcSpeechDebounce);
+  vcSpeechDebounce = null;
+  vcAccum = '';
   if (vcRecog) { try { vcRecog.abort(); } catch (_) {} vcRecog = null; }
   vcActive = false;
   vcSetState('idle');
