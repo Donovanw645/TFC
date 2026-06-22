@@ -420,7 +420,7 @@ function tvSetStreamStatus(text, state) {
 function tvStopDriveStream() {
   if (tvDriveHls) { tvDriveHls.destroy(); tvDriveHls = null; }
   const video = document.getElementById('driveVideo');
-  if (video) { video.pause(); video.src = ''; video.load(); video.classList.add('hidden'); }
+  if (video) { video.pause(); video.src = ''; video.load(); video.style.opacity = ''; video.classList.add('hidden'); }
   // Restore the still image — it's always loaded behind the video
   const img = document.getElementById('driveImage');
   if (img) img.style.opacity = img.getAttribute('data-loaded') === '1' ? '1' : '0';
@@ -444,6 +444,7 @@ function tvAttemptDriveStream(cam) {
 
   function onStreamReady() {
     video.classList.remove('hidden');
+    video.style.opacity = '1';
     if (img) img.style.opacity = '0'; // video is on top now
     tvSetStreamStatus('● Live', 'live');
   }
