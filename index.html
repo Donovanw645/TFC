@@ -60,6 +60,12 @@
   </div>
 
   <div class="header-right">
+    <button class="icon-btn" id="settingsBtn" aria-label="Settings" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="satelliteBtn" aria-label="Toggle satellite view" title="Toggle satellite view">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
@@ -129,34 +135,34 @@
         <div class="travel-title">Quick Routes</div>
         <div class="quick-routes-list">
           <button class="quick-route-btn" id="qr_home" data-key="home">
-            <svg class="qr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg class="qr-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
             </svg>
             <div class="qr-text">
               <span class="qr-label">Home</span>
-              <span class="qr-addr" id="qr_addr_home">Not set</span>
+              <span class="qr-addr" id="qr_addr_home">Not set — configure in Settings</span>
             </div>
-            <svg class="qr-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+            <svg class="qr-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
           </button>
           <button class="quick-route-btn" id="qr_work" data-key="work">
-            <svg class="qr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg class="qr-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
             </svg>
             <div class="qr-text">
               <span class="qr-label">Work</span>
-              <span class="qr-addr" id="qr_addr_work">Not set</span>
+              <span class="qr-addr" id="qr_addr_work">Not set — configure in Settings</span>
             </div>
-            <svg class="qr-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+            <svg class="qr-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
           </button>
           <button class="quick-route-btn" id="qr_ss" data-key="ss">
-            <svg class="qr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg class="qr-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
             </svg>
             <div class="qr-text">
               <span class="qr-label">SS</span>
-              <span class="qr-addr" id="qr_addr_ss">Not set</span>
+              <span class="qr-addr" id="qr_addr_ss">Not set — configure in Settings</span>
             </div>
-            <svg class="qr-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+            <svg class="qr-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
           </button>
         </div>
       </div>
@@ -379,6 +385,147 @@
   </div>
 </div>
 
+<!-- ── Settings Panel ── -->
+<div class="settings-panel" id="settingsPanel" aria-label="Settings" role="dialog">
+  <div class="settings-header">
+    <span class="settings-title">Settings</span>
+    <button class="icon-btn" id="settingsClose" aria-label="Close settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="settings-body">
+
+    <!-- Quick Route Locations -->
+    <div class="settings-section">
+      <div class="settings-section-title">Quick Route Locations</div>
+      <p class="settings-section-desc">Set addresses for the quick route buttons in Travel Mode.</p>
+
+      <div class="settings-loc-row">
+        <div class="settings-loc-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          Home
+        </div>
+        <div class="settings-loc-input-wrap">
+          <input type="text" class="settings-loc-input" id="stHomeInput" placeholder="Enter address…" autocomplete="off" spellcheck="false">
+          <div class="route-suggest hidden" id="stHomeSuggest"></div>
+        </div>
+        <div class="settings-loc-actions">
+          <button class="st-save-btn" id="stHomeSave">Save</button>
+          <button class="st-clear-btn" id="stHomeClear" title="Clear">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="settings-loc-row">
+        <div class="settings-loc-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+          Work
+        </div>
+        <div class="settings-loc-input-wrap">
+          <input type="text" class="settings-loc-input" id="stWorkInput" placeholder="Enter address…" autocomplete="off" spellcheck="false">
+          <div class="route-suggest hidden" id="stWorkSuggest"></div>
+        </div>
+        <div class="settings-loc-actions">
+          <button class="st-save-btn" id="stWorkSave">Save</button>
+          <button class="st-clear-btn" id="stWorkClear" title="Clear">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="settings-loc-row">
+        <div class="settings-loc-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+          SS
+        </div>
+        <div class="settings-loc-input-wrap">
+          <input type="text" class="settings-loc-input" id="stSsInput" placeholder="Enter address…" autocomplete="off" spellcheck="false">
+          <div class="route-suggest hidden" id="stSsSuggest"></div>
+        </div>
+        <div class="settings-loc-actions">
+          <button class="st-save-btn" id="stSsSave">Save</button>
+          <button class="st-clear-btn" id="stSsClear" title="Clear">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Travel Mode -->
+    <div class="settings-section">
+      <div class="settings-section-title">Travel Mode</div>
+
+      <div class="settings-toggle-row">
+        <div class="settings-toggle-label">
+          <span>Default Feed</span>
+          <span class="settings-toggle-desc">Feed mode when driving starts</span>
+        </div>
+        <div class="settings-seg" id="stFeedSeg">
+          <button class="settings-seg-btn active" data-val="view">View</button>
+          <button class="settings-seg-btn" data-val="stream">Stream</button>
+        </div>
+      </div>
+
+      <div class="settings-toggle-row">
+        <div class="settings-toggle-label">
+          <span>Camera Corridor</span>
+          <span class="settings-toggle-desc">Distance from route to include cameras</span>
+        </div>
+        <select class="settings-select" id="stCorridorSel">
+          <option value="800">0.5 mi</option>
+          <option value="1600" selected>1 mi</option>
+          <option value="3200">2 mi</option>
+          <option value="5000">3 mi</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Data -->
+    <div class="settings-section">
+      <div class="settings-section-title">Data</div>
+
+      <div class="settings-action-row">
+        <div class="settings-action-label">
+          <span>Unavailable Cache</span>
+          <span class="settings-action-desc">Clears cameras flagged as unavailable</span>
+        </div>
+        <button class="st-action-btn" id="stClearCache">Clear</button>
+      </div>
+
+      <div class="settings-action-row">
+        <div class="settings-action-label">
+          <span>Quick Route Locations</span>
+          <span class="settings-action-desc">Removes all saved Home / Work / SS addresses</span>
+        </div>
+        <button class="st-action-btn danger" id="stClearQR">Clear All</button>
+      </div>
+    </div>
+
+    <!-- Access -->
+    <div class="settings-section">
+      <div class="settings-section-title">Access</div>
+
+      <div class="settings-action-row">
+        <div class="settings-action-label">
+          <span>Lock App</span>
+          <span class="settings-action-desc">Return to the password screen</span>
+        </div>
+        <button class="st-action-btn" id="stLockBtn">Lock</button>
+      </div>
+    </div>
+
+    <!-- About -->
+    <div class="settings-about">
+      CA Traffic Cams &nbsp;·&nbsp; California statewide camera viewer<br>
+      Camera data via Caltrans CWWP2 API<br>
+      Routing via OSRM &amp; Nominatim (OpenStreetMap)
+    </div>
+  </div>
+</div>
+<!-- Settings backdrop -->
+<div class="settings-backdrop hidden" id="settingsBackdrop"></div>
+
 <!-- ── Backdrop (mobile) ── -->
 <div class="backdrop hidden" id="backdrop"></div>
 
@@ -463,5 +610,6 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js" crossorigin=""></script>
 <script src="js/app.js"></script>
 <script src="js/travel.js"></script>
+<script src="js/settings.js"></script>
 </body>
 </html>

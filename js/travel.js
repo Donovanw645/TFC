@@ -15,7 +15,7 @@
 // ── Free, key-less, CORS-friendly services ──
 const OSRM_URL       = 'https://router.project-osrm.org/route/v1/driving/';
 const NOMINATIM_URL  = 'https://nominatim.openstreetmap.org/search';
-const ROUTE_CORRIDOR_M = 1600; // cameras within ~1 mile of the route count as "on route"
+let ROUTE_CORRIDOR_M = 1600; // cameras within ~1 mile of the route count as "on route"
 
 // ── State ──
 let tvMode       = 'browse';
@@ -63,7 +63,7 @@ function tvRenderQuickRoutes() {
       btn.title = pt.display || pt.label || '';
     } else {
       btn.classList.remove('qr-set');
-      addr.textContent = 'Not set — save a destination here';
+      addr.textContent = 'Not set — configure in Settings';
     }
   });
 }
