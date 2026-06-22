@@ -68,11 +68,21 @@ function vcHideFeedback() {
 // ── Intent execution (shared by all three parsing layers) ──────────────────
 function vcExecuteIntent(intent, raw) {
   switch (intent.intent) {
+    case 'goto': {
+      const total   = tvRouteCams ? tvRouteCams.length : 0;
+      const idx     = Math.max(0, Math.min(total - 1, (intent.index || 1) - 1));
+      const from    = tvDriveIndex + 1;
+      vcShowFeedback(raw, 'Going to Camera ' + (idx + 1) + ' (from ' + from + ')');
+      tvAutoFollow  = false;
+      tvDriveIndex  = idx;
+      tvShowDriveCam(idx);
+      break;
+    }
     case 'nav': {
       const delta   = Math.round(intent.delta || 0);
-      const fromIdx = tvDriveIndex;                                    // where we are now
-      const toIdx   = Math.max(0, Math.min(tvRouteCams.length - 1, fromIdx + delta));
-      const actual  = toIdx - fromIdx;                                 // real jump (may be < delta if clamped)
+      const fromIdx = tvDriveIndex;
+      const toIdx   = Math.max(0, Math.min((tvRouteCams ? tvRouteCams.length - 1 : 0), fromIdx + delta));
+      const actual  = toIdx - fromIdx;
       const n       = Math.abs(actual);
       vcShowFeedback(raw,
         'Camera ' + (fromIdx + 1) + ' → ' + (toIdx + 1) +
@@ -103,6 +113,11 @@ function vcExecuteIntent(intent, raw) {
 function vcRegexParse(t) {
   let m;
 
+  // Absolute index: "camera 27" / "go to camera 5" / "jump to camera 10"
+  m = t.match(/(?:(?:go|jump|skip)\s+to\s+)?camera\s+#?(\d+)\b/);
+  if (m) return { intent: 'goto', index: vcParseNum(m[1]) };
+
+  // Relative: "3 cameras ahead/back"
   m = t.match(/\b(\w+)\s+cameras?\s+(ahead|forward)/);
   if (m) return { intent: 'nav', delta: vcParseNum(m[1]) };
 
@@ -117,13 +132,14 @@ function vcRegexParse(t) {
   if (/\b(stream|live)\s*(mode)?\b/.test(t)) return { intent: 'stream' };
   if (/\b(view|still)\s*(mode)?\b/.test(t))  return { intent: 'view' };
 
-  m = t.match(/camera\s+(?:on|at|near|along|for|in)?\s*(.{3,})/);
+  // Location search: "camera on/at/near ..."
+  m = t.match(/camera\s+(?:on|at|near|along|for|in)\s*(.{2,})/);
   if (m) return { intent: 'search', query: m[1].trim() };
 
   m = t.match(/show\s+(?:me\s+)?(?:the\s+)?(.{3,})/);
   if (m) {
     const q = m[1].replace(/^camera\s+(?:on|at|near|in)?\s*/, '').trim();
-    return { intent: 'search', query: q };
+    return q ? { intent: 'search', query: q } : null;
   }
 
   return null;
@@ -163,15 +179,20 @@ function vcKeywordParse(t) {
   if (hasStrm && !hasFwd && !hasBwd) return { intent: 'stream' };
   if (hasView  && !hasFwd && !hasBwd) return { intent: 'view' };
 
-  // Navigation — need at least one directional word, OR a number without backward signal
-  if (hasFwd && !hasBwd)  return { intent: 'nav', delta:  num !== null ? num : 1 };
-  if (hasBwd && !hasFwd)  return { intent: 'nav', delta: -(num !== null ? num : 1) };
-  if (num !== null && !hasBwd && !hasStrm && !hasView)
-    return { intent: 'nav', delta: num }; // bare number = go forward that many
+  // "camera N" with no direction = absolute goto, not relative nav
+  if (hasSrch && num !== null && !hasFwd && !hasBwd) return { intent: 'goto', index: num };
 
-  // Search fallback — sentence has location-type words but no nav intent
+  // Search by name when camera keyword present but no number or direction
   if (hasSrch && num === null && !hasFwd && !hasBwd && !hasStrm && !hasView)
     return { intent: 'search', query: t };
+
+  // Relative navigation — need a directional word
+  if (hasFwd && !hasBwd)  return { intent: 'nav', delta:  num !== null ? num : 1 };
+  if (hasBwd && !hasFwd)  return { intent: 'nav', delta: -(num !== null ? num : 1) };
+
+  // Bare number with no camera/search keyword and no backward signal → go forward
+  if (num !== null && !hasBwd && !hasStrm && !hasView && !hasSrch)
+    return { intent: 'nav', delta: num };
 
   return null;
 }
@@ -187,7 +208,8 @@ async function vcParseWithAI(raw, apiKey) {
     'Extract the user\'s intent and return ONLY a JSON object — no explanation, no markdown. ' +
     'Current state: ' + totalCams + ' cameras on route, currently showing camera #' + curIdx + ', feed mode is "' + feedMode + '". ' +
     'JSON formats:\n' +
-    '{"intent":"nav","delta":N}   N>0 = cameras ahead, N<0 = cameras back\n' +
+    '{"intent":"goto","index":N}  go to camera #N on the route (1-indexed, absolute)\n' +
+    '{"intent":"nav","delta":N}   relative jump: N>0=ahead, N<0=back\n' +
     '{"intent":"stream"}          switch to live stream feed\n' +
     '{"intent":"view"}            switch to still image feed\n' +
     '{"intent":"search","query":"road name or location"}\n' +
