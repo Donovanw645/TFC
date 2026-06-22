@@ -30,6 +30,23 @@
       </svg>
       <span class="brand-name">CA Traffic Cams</span>
     </div>
+
+    <!-- Mode switcher: Browse vs Travel -->
+    <div class="mode-toggle" id="modeToggle" role="tablist" aria-label="App mode">
+      <button class="mode-btn active" id="modeBrowse" data-mode="browse" role="tab" aria-selected="true" title="Browse cameras">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        <span>Browse</span>
+      </button>
+      <button class="mode-btn" id="modeTravel" data-mode="travel" role="tab" aria-selected="false" title="Plan a route & drive">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 11l19-9-9 19-2-8-8-2z"/>
+        </svg>
+        <span>Travel</span>
+      </button>
+    </div>
   </div>
 
   <div class="search-wrapper" id="searchWrapper">
@@ -99,6 +116,60 @@
           <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14M3 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/>
         </svg>
         <p>Loading cameras…</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Travel Mode panel (route planner) -->
+  <aside class="travel-panel" id="travelPanel">
+    <div class="travel-scroll">
+      <div class="travel-section">
+        <div class="travel-title">Plan a Route</div>
+        <div class="route-field">
+          <span class="route-pin start"></span>
+          <input type="text" id="routeStart" class="route-input" placeholder="Start — My Location" autocomplete="off" spellcheck="false">
+          <button class="route-loc-btn" id="routeStartLoc" title="Use my location" aria-label="Use my location">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>
+          </button>
+        </div>
+        <div class="route-suggest hidden" id="startSuggest"></div>
+        <div class="route-field">
+          <span class="route-pin end"></span>
+          <input type="text" id="routeEnd" class="route-input" placeholder="Destination" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="route-suggest hidden" id="endSuggest"></div>
+        <button class="route-go-btn" id="routeGoBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
+          Get Route
+        </button>
+      </div>
+
+      <!-- Route summary + drive button -->
+      <div class="route-summary hidden" id="routeSummary">
+        <div class="route-stats">
+          <div class="route-stat"><span class="route-stat-val" id="routeDistance">—</span><span class="route-stat-lbl">Distance</span></div>
+          <div class="route-stat"><span class="route-stat-val" id="routeDuration">—</span><span class="route-stat-lbl">Drive Time</span></div>
+          <div class="route-stat"><span class="route-stat-val" id="routeCamCount">—</span><span class="route-stat-lbl">Cameras</span></div>
+        </div>
+        <button class="drive-start-btn" id="driveBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M10 8l6 4-6 4V8z" fill="currentColor"/></svg>
+          Start Driving Mode
+        </button>
+        <button class="route-clear-btn" id="routeClearBtn">Clear Route</button>
+      </div>
+
+      <!-- Cameras along the route -->
+      <div class="travel-section route-cams-section hidden" id="routeCamsSection">
+        <div class="travel-subtitle">Cameras Along Route</div>
+        <div class="route-cam-list" id="routeCamList"></div>
+      </div>
+
+      <!-- Empty/help state -->
+      <div class="travel-help" id="travelHelp">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M3 11l19-9-9 19-2-8-8-2z"/>
+        </svg>
+        <p>Enter a destination to plan your route and see every traffic camera along the way.</p>
       </div>
     </div>
   </aside>
@@ -210,6 +281,41 @@
   </div>
 </div>
 
+<!-- ── Driving Mode (full-screen) ── -->
+<div class="drive-overlay hidden" id="driveOverlay">
+  <div class="drive-top">
+    <div class="drive-cam-info">
+      <div class="drive-cam-name" id="driveCamName">Locating…</div>
+      <div class="drive-cam-meta" id="driveCamMeta"></div>
+    </div>
+    <div class="drive-ahead" id="driveAhead"></div>
+    <button class="drive-exit-btn" id="driveExitBtn" aria-label="Exit driving mode">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="drive-image-wrap">
+    <img id="driveImage" class="drive-image" alt="Road ahead">
+    <div class="drive-image-loading" id="driveImageLoading"><div class="spinner"></div></div>
+    <div class="drive-image-overlay hidden" id="driveImageOverlay">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="56" height="56" opacity=".5">
+        <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14M3 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/>
+      </svg>
+      <p id="driveOverlayMsg">No camera ahead</p>
+    </div>
+  </div>
+
+  <div class="drive-bottom">
+    <button class="drive-nav-btn" id="drivePrevBtn" aria-label="Previous camera">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="drive-next" id="driveNext"></div>
+    <button class="drive-nav-btn" id="driveNextBtn" aria-label="Next camera">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+</div>
+
 <!-- ── Backdrop (mobile) ── -->
 <div class="backdrop hidden" id="backdrop"></div>
 
@@ -293,5 +399,6 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js" crossorigin=""></script>
 <script src="js/app.js"></script>
+<script src="js/travel.js"></script>
 </body>
 </html>
