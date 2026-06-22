@@ -12,6 +12,7 @@
 const ST_FEED_KEY     = 'tfc_st_feed';
 const ST_CORRIDOR_KEY = 'tfc_st_corridor';
 const ST_BEHIND_KEY   = 'tfc_st_behind';
+const ST_LABELS_KEY   = 'tfc_st_labels';
 const ST_VOICE_KEY    = 'tfc_vc_enabled'; // shared with voice.js
 
 // ── Open / Close ──────────────────────────────────────────────────────────
@@ -47,6 +48,9 @@ function stPopulatePanel() {
 
   const behind = document.getElementById('stBehindToggle');
   if (behind) behind.checked = localStorage.getItem(ST_BEHIND_KEY) === '1';
+
+  const labels = document.getElementById('stLabelsToggle');
+  if (labels) labels.checked = localStorage.getItem(ST_LABELS_KEY) === '1';
 
   const voice = document.getElementById('stVoiceToggle');
   if (voice) voice.checked = localStorage.getItem(ST_VOICE_KEY) === '1';
@@ -211,6 +215,14 @@ function stReadCorridorPref() { return parseInt(localStorage.getItem(ST_CORRIDOR
   if (behindToggle) {
     behindToggle.addEventListener('change', () => {
       localStorage.setItem(ST_BEHIND_KEY, behindToggle.checked ? '1' : '0');
+    });
+  }
+
+  // Street Labels toggle
+  const labelsToggle = document.getElementById('stLabelsToggle');
+  if (labelsToggle) {
+    labelsToggle.addEventListener('change', () => {
+      if (typeof setLabelsEnabled === 'function') setLabelsEnabled(labelsToggle.checked);
     });
   }
 

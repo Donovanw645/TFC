@@ -250,7 +250,18 @@ const satTiles = L.tileLayer(
     maxZoom: 19,
   }
 );
+const labelTiles = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
+  {
+    subdomains: 'abcd',
+    maxZoom: 19,
+    opacity: 0.9,
+    r: window.devicePixelRatio > 1 ? '@2x' : '',
+    pane: 'shadowPane',
+  }
+);
 let satelliteEnabled = false;
+let labelsEnabled    = localStorage.getItem('tfc_st_labels') === '1';
 darkTiles.addTo(map);
 
 function toggleSatellite() {
@@ -260,9 +271,20 @@ function toggleSatellite() {
   if (satelliteEnabled) {
     map.removeLayer(darkTiles);
     satTiles.addTo(map);
+    if (labelsEnabled) labelTiles.addTo(map);
   } else {
+    if (map.hasLayer(labelTiles)) map.removeLayer(labelTiles);
     map.removeLayer(satTiles);
     darkTiles.addTo(map);
+  }
+}
+
+function setLabelsEnabled(enabled) {
+  labelsEnabled = enabled;
+  localStorage.setItem('tfc_st_labels', enabled ? '1' : '0');
+  if (satelliteEnabled) {
+    if (enabled) { if (!map.hasLayer(labelTiles)) labelTiles.addTo(map); }
+    else         { if (map.hasLayer(labelTiles))  map.removeLayer(labelTiles); }
   }
 }
 
