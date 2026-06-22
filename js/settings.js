@@ -12,6 +12,7 @@
 const ST_FEED_KEY     = 'tfc_st_feed';
 const ST_CORRIDOR_KEY = 'tfc_st_corridor';
 const ST_BEHIND_KEY   = 'tfc_st_behind';
+const ST_VOICE_KEY    = 'tfc_vc_enabled'; // shared with voice.js
 
 // ── Open / Close ──────────────────────────────────────────────────────────
 function stOpenPanel() {
@@ -46,6 +47,9 @@ function stPopulatePanel() {
 
   const behind = document.getElementById('stBehindToggle');
   if (behind) behind.checked = localStorage.getItem(ST_BEHIND_KEY) === '1';
+
+  const voice = document.getElementById('stVoiceToggle');
+  if (voice) voice.checked = localStorage.getItem(ST_VOICE_KEY) === '1';
 }
 
 function stCapKey(key) {
@@ -146,12 +150,6 @@ function stClearAllQR() {
   showToast('Quick route locations cleared', '', 2500);
 }
 
-function stLockApp() {
-  sessionStorage.removeItem('tfc_auth');
-  sessionStorage.removeItem('tfc_proxy');
-  location.reload();
-}
-
 // ── Exported preference readers (used by travel.js at runtime) ────────────
 function stReadFeedPref()     { return localStorage.getItem(ST_FEED_KEY)     || 'view'; }
 function stReadCorridorPref() { return parseInt(localStorage.getItem(ST_CORRIDOR_KEY) || '1600', 10); }
@@ -210,8 +208,16 @@ function stReadCorridorPref() { return parseInt(localStorage.getItem(ST_CORRIDOR
     });
   }
 
+  // Voice Commands toggle
+  const voiceToggle = document.getElementById('stVoiceToggle');
+  if (voiceToggle) {
+    voiceToggle.addEventListener('change', () => {
+      localStorage.setItem(ST_VOICE_KEY, voiceToggle.checked ? '1' : '0');
+      if (typeof vcUpdateBtn === 'function') vcUpdateBtn();
+    });
+  }
+
   // Data management
   document.getElementById('stClearCache').addEventListener('click', stClearUnavailCache);
   document.getElementById('stClearQR').addEventListener('click', stClearAllQR);
-  document.getElementById('stLockBtn').addEventListener('click', stLockApp);
 }());
