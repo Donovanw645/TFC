@@ -1320,6 +1320,34 @@ body.mode-travel .travel-panel { display: flex; }
   border-radius: 999px;
   white-space: nowrap;
 }
+/* ── Feed mode toggle (View / Stream) ── */
+.drive-feed-toggle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 36px;
+  padding: 0 12px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 999px;
+  color: rgba(255,255,255,.85);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.drive-feed-toggle svg { width: 16px; height: 16px; }
+.drive-feed-toggle:hover { background: rgba(255,255,255,.2); }
+/* Stream icon hidden in View mode, View icon hidden in Stream mode */
+.drive-toggle-icon-stream { display: none; }
+.drive-feed-toggle.stream-active {
+  background: rgba(74,159,255,.22);
+  border-color: rgba(74,159,255,.55);
+  color: #7dc4ff;
+}
+.drive-feed-toggle.stream-active .drive-toggle-icon-view   { display: none; }
+.drive-feed-toggle.stream-active .drive-toggle-icon-stream { display: block; }
+
 .drive-exit-btn {
   flex-shrink: 0;
   width: 40px; height: 40px;
@@ -1343,6 +1371,15 @@ body.mode-travel .travel-panel { display: flex; }
   width: 100%; height: 100%;
   object-fit: contain;
   opacity: 0;
+  transition: opacity .3s;
+}
+/* Stream video sits on top of still; hidden until stream is ready */
+.drive-video {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain;
+  background: #000;
   transition: opacity .3s;
 }
 .drive-image-loading {

@@ -34,6 +34,8 @@ let tvDriveTimer = null;
 let tvWakeLock   = null;
 let tvDriveIndex = 0;
 let tvAutoFollow = true;
+let tvFeedMode   = 'view';  // 'view' | 'stream'
+let tvDriveHls   = null;
 
 // ── Geometry helpers ──
 function tvMeters(lat1, lng1, lat2, lng2) {
@@ -317,10 +319,76 @@ function tvStartDriving() {
 
 function tvStopDriving() {
   tvDriving = false;
+  tvStopDriveStream();
   document.getElementById('driveOverlay').classList.add('hidden');
   if (tvDriveWatch !== null) { navigator.geolocation.clearWatch(tvDriveWatch); tvDriveWatch = null; }
   if (tvDriveTimer) { clearInterval(tvDriveTimer); tvDriveTimer = null; }
   tvReleaseWake();
+}
+
+// ── View / Stream feed mode ────────────────────────────────────────────────
+function tvToggleFeedMode() {
+  tvFeedMode = tvFeedMode === 'view' ? 'stream' : 'view';
+  const btn = document.getElementById('driveFeedToggle');
+  const isStream = tvFeedMode === 'stream';
+  btn.classList.toggle('stream-active', isStream);
+  btn.querySelector('.drive-toggle-label').textContent = isStream ? 'Stream' : 'View';
+
+  if (!isStream) {
+    // Switched back to View — kill the video, still is already loaded
+    tvStopDriveStream();
+  } else {
+    // Switched to Stream — attempt HLS for the current cam (still stays visible as placeholder)
+    const rc = tvRouteCams[tvDriveIndex];
+    if (rc) tvAttemptDriveStream(rc.cam);
+  }
+}
+
+function tvStopDriveStream() {
+  if (tvDriveHls) { tvDriveHls.destroy(); tvDriveHls = null; }
+  const video = document.getElementById('driveVideo');
+  if (video) { video.pause(); video.src = ''; video.load(); video.classList.add('hidden'); }
+  // Restore the still image
+  const img = document.getElementById('driveImage');
+  if (img) img.style.opacity = img.getAttribute('data-loaded') === '1' ? '1' : '0';
+}
+
+function tvAttemptDriveStream(cam) {
+  if (!cam.streamUrl) return; // no stream available — still stays visible
+  const video = document.getElementById('driveVideo');
+  const img   = document.getElementById('driveImage');
+  if (!video) return;
+
+  tvStopDriveStream(); // tear down any previous stream first
+
+  function onStreamReady() {
+    // Stream is playing — slide video in over the still
+    video.classList.remove('hidden');
+    if (img) img.style.opacity = '0';
+  }
+  function onStreamFail() {
+    // Keep showing the still; video stays hidden
+    tvStopDriveStream();
+  }
+
+  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = cam.streamUrl;
+    video.load();
+    video.play().catch(() => {});
+    video.addEventListener('canplay', onStreamReady, { once: true });
+    video.addEventListener('error',   onStreamFail,  { once: true });
+  } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+    tvDriveHls = new Hls({ enableWorker: false });
+    tvDriveHls.loadSource(cam.streamUrl);
+    tvDriveHls.attachMedia(video);
+    tvDriveHls.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().catch(() => {});
+      onStreamReady();
+    });
+    tvDriveHls.on(Hls.Events.ERROR, (_, data) => {
+      if (data.fatal) onStreamFail();
+    });
+  }
 }
 
 function tvOnDrivePos(p) {
@@ -364,16 +432,26 @@ function tvShowDriveCam(idx) {
   document.getElementById('driveNext').textContent =
     next ? 'Next: ' + next.cam.name : 'Final camera on route';
 
-  // toggle nav buttons
   document.getElementById('drivePrevBtn').disabled = idx <= 0;
   document.getElementById('driveNextBtn').disabled = idx >= tvRouteCams.length - 1;
 
+  // Always load the still first (instant feedback / View Mode / stream fallback)
   tvLoadDriveImg(cam);
+  // Then attempt stream on top if in Stream Mode
+  if (tvFeedMode === 'stream') tvAttemptDriveStream(cam);
 }
 
 function tvRefreshDriveImg() {
   const rc = tvRouteCams[tvDriveIndex];
-  if (rc) tvLoadDriveImg(rc.cam);
+  if (!rc) return;
+  if (tvFeedMode === 'view') {
+    // View Mode: refresh the still on every tick
+    tvLoadDriveImg(rc.cam);
+  } else {
+    // Stream Mode: if stream died, try to reconnect; otherwise leave it running
+    const video = document.getElementById('driveVideo');
+    if (video && video.paused && !video.src) tvAttemptDriveStream(rc.cam);
+  }
 }
 
 function tvLoadDriveImg(cam) {
@@ -404,7 +482,7 @@ function tvLoadDriveImg(cam) {
 
   tmp.onload = () => {
     if (done) return; done = true; clearTimeout(timer);
-    img.src = src; img.style.opacity = '1';
+    img.src = src; img.style.opacity = '1'; img.setAttribute('data-loaded', '1');
     load.classList.add('hidden');
   };
   tmp.onerror = () => {
@@ -477,6 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('driveExitBtn').addEventListener('click', tvStopDriving);
   document.getElementById('drivePrevBtn').addEventListener('click', () => tvDriveNav(-1));
   document.getElementById('driveNextBtn').addEventListener('click', () => tvDriveNav(1));
+  document.getElementById('driveFeedToggle').addEventListener('click', tvToggleFeedMode);
 
   // Mobile: menu button toggles the travel panel while in travel mode
   document.getElementById('menuBtn').addEventListener('click', () => {
