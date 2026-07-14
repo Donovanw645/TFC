@@ -13,6 +13,7 @@ const ST_FEED_KEY     = 'tfc_st_feed';
 const ST_CORRIDOR_KEY = 'tfc_st_corridor';
 const ST_BEHIND_KEY   = 'tfc_st_behind';
 const ST_LABELS_KEY   = 'tfc_st_labels';
+const ST_NEVADA_KEY   = 'tfc_nv_enabled'; // shared with app.js (nvEnabled)
 const ST_VOICE_KEY    = 'tfc_vc_enabled'; // shared with voice.js
 
 // ── Open / Close ──────────────────────────────────────────────────────────
@@ -51,6 +52,9 @@ function stPopulatePanel() {
 
   const labels = document.getElementById('stLabelsToggle');
   if (labels) labels.checked = localStorage.getItem(ST_LABELS_KEY) === '1';
+
+  const nevada = document.getElementById('stNevadaToggle');
+  if (nevada) nevada.checked = localStorage.getItem(ST_NEVADA_KEY) === '1';
 
   const voice = document.getElementById('stVoiceToggle');
   if (voice) voice.checked = localStorage.getItem(ST_VOICE_KEY) === '1';
@@ -223,6 +227,14 @@ function stReadCorridorPref() { return parseInt(localStorage.getItem(ST_CORRIDOR
   if (labelsToggle) {
     labelsToggle.addEventListener('change', () => {
       if (typeof setLabelsEnabled === 'function') setLabelsEnabled(labelsToggle.checked);
+    });
+  }
+
+  // Nevada Cameras toggle
+  const nevadaToggle = document.getElementById('stNevadaToggle');
+  if (nevadaToggle) {
+    nevadaToggle.addEventListener('change', () => {
+      if (typeof setNevadaEnabled === 'function') setNevadaEnabled(nevadaToggle.checked);
     });
   }
 

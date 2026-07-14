@@ -208,7 +208,10 @@ async function fetchDistrict(d, proxy) {
 }
 
 // ── State ──────────────────────────────────
-let allCameras    = [];
+let allCameras    = [];       // merged, canonical list consumed everywhere
+let caCameras     = [];       // California (Caltrans) source
+let nvCameras     = [];       // Nevada (NVRoads) source, loaded lazily
+let nvLoaded      = false;    // whether NV has been fetched this session
 let filtered      = [];
 let selectedCam   = null;
 let userLatLng    = null;
@@ -362,6 +365,57 @@ function normalizeCamera(raw, district) {
   };
 }
 
+// ── Multi-state camera sources ──────────────
+// allCameras is the merged, canonical list; caCameras + nvCameras are the sources.
+function nvEnabled() { return localStorage.getItem('tfc_nv_enabled') === '1'; }
+
+// Region/district label for a camera (NV cams have no CA district number).
+function camRegionLabel(cam) {
+  return cam.state === 'NV' ? (cam.region || 'Nevada') : ('D' + cam.district);
+}
+
+// Recombine the active sources into allCameras, then sort + render.
+function rebuildCameras() {
+  allCameras = nvEnabled() ? caCameras.concat(nvCameras) : caCameras.slice();
+  allCameras.sort((a, b) =>
+    ((a.state === 'NV') - (b.state === 'NV')) ||   // CA first, then NV
+    (a.district - b.district) ||
+    a.name.localeCompare(b.name)
+  );
+  updateUserDistances();
+  applyFilter();
+}
+
+// Fetch + normalize Nevada cameras (best-effort; leaves nvCameras empty on failure).
+async function loadNevadaCameras() {
+  try {
+    const cams = await nvFetchCameras();               // defined in nevada.js (self-proxying)
+    nvCameras = cams.filter(c =>
+      isFinite(c.lat) && isFinite(c.lng) &&
+      c.lat >= 34 && c.lat <= 42.5 &&
+      c.lng >= -121 && c.lng <= -113.5
+    );
+    nvLoaded = nvCameras.length > 0;
+    console.log('[NVRoads] loaded', nvCameras.length, 'cameras');
+  } catch (e) {
+    console.warn('[NVRoads] failed:', e && e.message);
+    nvLoaded = false;
+  }
+}
+
+// Toggle Nevada coverage on/off (called from Settings).
+async function setNevadaEnabled(enabled) {
+  localStorage.setItem('tfc_nv_enabled', enabled ? '1' : '0');
+  if (enabled && !nvLoaded) {
+    showToast('Loading Nevada cameras…', '', 3000);
+    await loadNevadaCameras();
+    if (nvCameras.length) showToast('Added ' + nvCameras.length.toLocaleString() + ' Nevada cameras', 'success', 3000);
+    else                  showToast('Could not load Nevada cameras — try again', 'error', 4000);
+  }
+  rebuildCameras();
+}
+window.setNevadaEnabled = setNevadaEnabled; // expose for settings.js
+
 // ── Load all cameras ────────────────────────
 async function loadAllCameras() {
   showLoading(true, 'Loading cameras…');
@@ -391,22 +445,26 @@ async function loadAllCameras() {
     }
   }
 
-  allCameras = cameras.filter(c =>
+  caCameras = cameras.filter(c =>
     isFinite(c.lat) && isFinite(c.lng) &&
     c.lat >= 32 && c.lat <= 42.5 &&
     c.lng >= -125 && c.lng <= -113
   );
 
-  if (!allCameras.length) {
+  if (!caCameras.length) {
     showLoading(false);
     showToast('Could not load cameras — tap ↺ to retry', 'error', 6000);
     showListPlaceholder('No cameras loaded. Tap the refresh button to retry.');
     return;
   }
 
-  allCameras.sort((a, b) => a.district - b.district || a.name.localeCompare(b.name));
-  updateUserDistances();
-  applyFilter();
+  // Load Nevada in parallel if the user has it enabled
+  if (nvEnabled()) {
+    showLoading(true, 'Loading Nevada cameras…');
+    await loadNevadaCameras();
+  }
+
+  rebuildCameras();
   showLoading(false);
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -488,7 +546,8 @@ function applyUnavailableCache() {
 
 async function checkUnavailableImages() {
   if (!currentProxy) return;
-  const toCheck = allCameras.filter(c => c.imageUrl);
+  // Caltrans placeholder JPEGs are <8KB; that heuristic is CA-specific, so skip NV.
+  const toCheck = allCameras.filter(c => c.imageUrl && c.state !== 'NV');
 
   for (let i = 0; i < toCheck.length; i += 8) {
     const batch = toCheck.slice(i, i + 8);
@@ -609,7 +668,7 @@ function buildPopupHtml(cam) {
       ${imgSrc ? `<img class="map-popup-img" src="${imgSrc}" alt="${escHtml(cam.name)}" loading="lazy" onerror="this.style.display='none'">` : ''}
       <div class="map-popup-body">
         <div class="map-popup-name">${escHtml(cam.name)}</div>
-        <div class="map-popup-road">${escHtml(cam.roadway)} ${cam.direction ? '· ' + cam.direction : ''} &nbsp;D${cam.district}</div>
+        <div class="map-popup-road">${escHtml(cam.roadway)} ${cam.direction ? '· ' + cam.direction : ''} &nbsp;${escHtml(camRegionLabel(cam))}</div>
         <button class="map-popup-btn" onclick="openCameraById('${cam.id}')">
           View Camera
         </button>
@@ -641,7 +700,7 @@ function renderList() {
       </div>
       <div class="cam-list-info">
         <div class="cam-list-name">${escHtml(cam.name)}</div>
-        <div class="cam-list-road">${escHtml(cam.roadway)} ${cam.direction ? '· ' + cam.direction : ''} · D${cam.district}</div>
+        <div class="cam-list-road">${escHtml(cam.roadway)} ${cam.direction ? '· ' + cam.direction : ''} · ${escHtml(camRegionLabel(cam))}</div>
       </div>
       ${distStr ? `<div class="cam-list-dist">${distStr}</div>` : ''}
       <div class="cam-list-status ${cam.status}"></div>`;
@@ -696,7 +755,9 @@ function openCamera(cam, marker) {
   const details = [
     ['Roadway',   cam.roadway || '—'],
     ['Direction', cam.direction || '—'],
-    ['District',  `D${cam.district} · ${cam.distName}`],
+    cam.state === 'NV'
+      ? ['Region',   cam.region || 'Nevada']
+      : ['District', `D${cam.district} · ${cam.distName}`],
     ['County',    cam.county || '—'],
     ['Elevation', cam.elevation != null ? `${cam.elevation} ft` : '—'],
     ['Location',  `${cam.lat.toFixed(5)}, ${cam.lng.toFixed(5)}`],
@@ -853,7 +914,8 @@ function loadCameraImage(cam) {
     loading.classList.add('hidden');
     document.getElementById('camTimestamp').textContent = new Date().toLocaleTimeString();
     // Lazy check: if we haven't verified this camera's image size yet, do it now
-    if (!cam.imageChecked && currentProxy) {
+    // (CA-only — the <8KB placeholder heuristic doesn't apply to NVRoads).
+    if (!cam.imageChecked && currentProxy && cam.state !== 'NV') {
       fetchWithTimeout(currentProxy + encodeURIComponent(src), 10000, { mode: 'cors' })
         .then(function(res) { return res.blob(); })
         .then(function(blob) {
