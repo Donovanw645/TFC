@@ -236,33 +236,31 @@ const map = L.map('map', {
 
 window._leafletMap = map; // exposed for post-gate invalidateSize call
 
-// Dark CartoDB tiles
-const darkTiles = L.tileLayer(
-  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a> | Data: <a href="https://cwwp2.dot.ca.gov">Caltrans</a>',
-    subdomains: 'abcd',
-    maxZoom: 19,
-    r: window.devicePixelRatio > 1 ? '@2x' : ''
-  }
-);
+// Map tiles — Esri basemaps (free, no API key required).
+const ESRI_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+const TILE_ATTR  = 'Tiles &copy; <a href="https://www.esri.com">Esri</a> | Data: <a href="https://cwwp2.dot.ca.gov">Caltrans</a> &amp; <a href="https://www.nvroads.com">NVRoads</a>';
+
+// Dark basemap = Esri "Dark Gray Canvas" (base geometry + reference labels).
+const darkTiles = L.layerGroup([
+  L.tileLayer(ESRI_TILES + '/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    { attribution: TILE_ATTR, maxNativeZoom: 16, maxZoom: 19 }),
+  L.tileLayer(ESRI_TILES + '/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+    { maxNativeZoom: 16, maxZoom: 19 }),
+]);
+
+// Satellite imagery.
 const satTiles = L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  {
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, USGS, NOAA | Data: <a href="https://cwwp2.dot.ca.gov">Caltrans</a>',
-    maxZoom: 19,
-  }
+  ESRI_TILES + '/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { attribution: TILE_ATTR, maxNativeZoom: 19, maxZoom: 19 }
 );
-const labelTiles = L.tileLayer(
-  'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
-  {
-    subdomains: 'abcd',
-    maxZoom: 19,
-    opacity: 0.9,
-    r: window.devicePixelRatio > 1 ? '@2x' : '',
-    pane: 'shadowPane',
-  }
-);
+
+// Street + place labels overlaid on satellite (roads/streets + city names).
+const labelTiles = L.layerGroup([
+  L.tileLayer(ESRI_TILES + '/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+    { maxNativeZoom: 19, maxZoom: 19, pane: 'shadowPane' }),
+  L.tileLayer(ESRI_TILES + '/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    { maxNativeZoom: 19, maxZoom: 19, pane: 'shadowPane' }),
+]);
 let satelliteEnabled = false;
 let labelsEnabled    = localStorage.getItem('tfc_st_labels') === '1';
 darkTiles.addTo(map);
