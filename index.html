@@ -13,8 +13,39 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="">
   <link rel="stylesheet" href="css/style.css">
+  <!-- Instant auth check to avoid a gate flash for logged-in users -->
+  <script>
+    (function () {
+      try {
+        var raw = localStorage.getItem('tfc_auth_v1');
+        if (raw) {
+          var ts = JSON.parse(raw).ts;
+          if (ts && (Date.now() - ts) < 30 * 864e5) {
+            document.documentElement.classList.add('tfc-authed');
+          }
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
+
+<!-- ── Login Gate ── -->
+<div class="login-gate" id="loginGate">
+  <div class="login-box">
+    <svg class="login-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+      <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.36a1 1 0 0 1-1.447.89L15 14M3 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/>
+    </svg>
+    <h1 class="login-title">CA Traffic Cams</h1>
+    <p class="login-sub">Enter the password to continue</p>
+    <form class="login-form" id="loginForm" autocomplete="on">
+      <input type="password" class="login-input" id="loginInput" placeholder="Password"
+             autocomplete="current-password" spellcheck="false" aria-label="Password">
+      <button type="submit" class="login-btn" id="loginBtn">Unlock</button>
+      <div class="login-error hidden" id="loginError">Incorrect password — try again</div>
+    </form>
+  </div>
+</div>
 
 <!-- ── Header ── -->
 <header class="app-header" id="appHeader">
@@ -579,6 +610,14 @@
         </div>
         <button class="st-action-btn danger" id="stClearQR">Clear All</button>
       </div>
+
+      <div class="settings-action-row">
+        <div class="settings-action-label">
+          <span>Lock App</span>
+          <span class="settings-action-desc">Sign out — you'll need the password again</span>
+        </div>
+        <button class="st-action-btn danger" id="stLockApp">Lock</button>
+      </div>
     </div>
 
     <!-- About -->
@@ -598,6 +637,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js" crossorigin=""></script>
+<script src="js/auth.js"></script>
 <script src="js/app.js"></script>
 <script src="js/nevada.js"></script>
 <script src="js/travel.js"></script>

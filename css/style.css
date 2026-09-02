@@ -1866,3 +1866,90 @@ body.mode-travel .travel-panel { display: flex; }
   color: var(--text-dim);
   line-height: 1.8;
 }
+
+/* ── Login Gate ── */
+.tfc-authed .login-gate { display: none !important; }
+
+.login-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(74,127,193,.18), transparent 60%),
+    var(--bg);
+  transition: opacity .3s ease;
+}
+.login-gate.closing { opacity: 0; pointer-events: none; }
+
+.login-box {
+  width: 100%;
+  max-width: 340px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 32px 28px;
+  text-align: center;
+}
+.login-box.shake { animation: login-shake .4s ease; }
+@keyframes login-shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-7px); }
+  40%, 60% { transform: translateX(7px); }
+}
+
+.login-icon {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.login-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -.01em;
+}
+.login-sub {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 6px 0 22px;
+}
+.login-form { display: flex; flex-direction: column; gap: 10px; }
+.login-input {
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--bg);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.login-input:focus { border-color: var(--accent); }
+.login-input::placeholder { color: var(--text-dim); }
+.login-btn {
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.login-btn:hover:not(:disabled) { background: var(--accent-h); }
+.login-btn:disabled { opacity: .6; cursor: default; }
+.login-error {
+  font-size: 12.5px;
+  color: var(--red);
+  margin-top: 2px;
+}

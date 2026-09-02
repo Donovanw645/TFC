@@ -1219,6 +1219,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Start
-  loadAllCameras();
+  // Start — but only once the user is past the password gate.
+  // If locked, auth.js calls window.tfcOnUnlock() after a successful login.
+  if (!window.tfcIsAuthed || window.tfcIsAuthed()) {
+    loadAllCameras();
+  } else {
+    window.tfcOnUnlock = loadAllCameras;
+  }
 });

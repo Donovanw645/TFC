@@ -274,4 +274,9 @@ function stReadCorridorPref() { return parseInt(localStorage.getItem(ST_CORRIDOR
   // Data management
   document.getElementById('stClearCache').addEventListener('click', stClearUnavailCache);
   document.getElementById('stClearQR').addEventListener('click', stClearAllQR);
+
+  // Lock app (sign out)
+  document.getElementById('stLockApp')?.addEventListener('click', () => {
+    if (typeof tfcLock === 'function') tfcLock();
+  });
 }());
