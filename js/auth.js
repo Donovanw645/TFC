@@ -14,8 +14,8 @@
 
 const AUTH_KEY  = 'tfc_auth_v1';
 const AUTH_DAYS = 30;
-// SHA-256("TrafficCamera645")
-const AUTH_HASH = '79120fd99230e32b5b0303d9d26cbc807cd8f533a799a8aacbce406e4b7d5ed7';
+// SHA-256 of the access password
+const AUTH_HASH = 'a4689274c7b7bca880ee59ad1b51b7f14ef9212d9e6658d64811ec0c75ae3c71';
 
 function tfcIsAuthed() {
   try {
